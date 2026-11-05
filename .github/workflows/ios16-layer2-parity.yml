@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test-macos-shared-models:
@@ -124,3 +124,48 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
+      - name: Verify isolated iPhone beta identity and memory gate
+        run: |
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortParityBeta'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '20'
+          /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱测试版'
+          test -s "$APP/Assets.car"
+          test -s "$APP/engine/spectraport-desktop-layer2.metallib"
+          grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
+          grep -Fq 'destination = "editor"' ios/SpectraPort/App/SpectraPortApp.swift
+          test ! -f ios/SpectraPort/App/SpectraCameraView.swift
+          test ! -f ios/SpectraPort/Engine/RawImageDeveloper.swift
+      - name: Package independent unsigned iPhone beta IPA
+        run: |
+          mkdir -p ios/build/beta-payload/Payload
+          cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
+          cd ios/build/beta-payload
+          zip -q -r ../SpectraPort-iOS16-Layer2-v0.14.0-beta.1-Build20-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-Layer2-v0.14.0-beta.1-Build20-unsigned.ipa
+      - name: Upload beta IPA as Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpectraPort-Layer2-v0.14.0-beta.1-Build20-unsigned
+          path: ios/build/SpectraPort-iOS16-Layer2-v0.14.0-beta.1-Build20-unsigned.ipa
+          if-no-files-found: error
+      - name: Publish separated iOS layer2 prerelease after all checks
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/ios16-desktop-layer2-parity'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILE=ios/build/SpectraPort-iOS16-Layer2-v0.14.0-beta.1-Build20-unsigned.ipa
+          TAG=ios16-layer2-v0.14.0-beta.1
+          test -s "$FILE"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            gh release create "$TAG" "$FILE" \
+              --target "$GITHUB_SHA" \
+              --title "SpectraPort iOS 16 Layer 2 v0.14.0 beta 1 (Build 20)" \
+              --notes "Standalone unsigned iOS 16 early test beta. Bundle ID com.twogou.SpectraPortParityBeta, installs beside stable Build 19. Default launch: Editor. Original C++20/Metal spectral film engine preserved; adds desktop Mac same-source grade, RGB curves, split-zone color balance and analytic masks (linear, radial, luminance, color). Full-resolution JPEG/PNG shares the Layer2 pipeline, but Layer2 jobs above 6MP are disabled for first device-memory trial. RAW custom camera remains removed. No device crash/performance guarantee; install only if accepting a test build and preserve important photos outside the app. Manually sign this IPA." \
+              --prerelease
+          fi
+          gh release view "$TAG" --json url -q .url
+
