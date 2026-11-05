@@ -59,7 +59,8 @@ enum FullSizeExporter {
             throw PortError.message("原始照片尺寸异常，拒绝危险解码")
         }
         let fullEdge = max(width, height)
-        let factor = min(1.0, sqrt(Double(limit.pixelLimit) / Double(pixels)))
+        // Leave headroom for ImageIO thumbnail rounding on rotated images.
+        let factor = min(1.0, sqrt(Double(limit.pixelLimit) / Double(pixels)) * 0.975)
         let selectedEdge = max(64, Int(floor(Double(fullEdge) * factor)))
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -67,14 +68,29 @@ enum FullSizeExporter {
             kCGImageSourceThumbnailMaxPixelSize: selectedEdge,
             kCGImageSourceShouldCacheImmediately: false
         ]
-        guard let picture = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        guard let first = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw PortError.message("无法解码高清图片")
+        }
+        var picture = first
+        let initialPixels = Int64(first.width) * Int64(first.height)
+        if initialPixels > Int64(limit.pixelLimit) {
+            // Some decoders return the whole image despite max thumb size.
+            // Use a bounded CI downscale instead of failing the export.
+            let ratio = sqrt(Double(limit.pixelLimit) * 0.94 / Double(initialPixels))
+            let scaled = CIImage(cgImage: first).transformed(
+                by: CGAffineTransform(scaleX: ratio, y: ratio)
+            )
+            let ci = CIContext(options: [.cacheIntermediates: false])
+            guard let bounded = ci.createCGImage(scaled, from: scaled.extent) else {
+                throw PortError.message("无法缩小至内存安全尺寸")
+            }
+            picture = bounded
         }
         let outW = picture.width
         let outH = picture.height
         let outPixels = Int64(outW) * Int64(outH)
         guard outPixels > 0 && outPixels <= Int64(limit.pixelLimit) else {
-            throw PortError.message("解码结果超出内存保护上限")
+            throw PortError.message("解码像素超出安全上限")
         }
         guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
             throw PortError.message("缺少 ProPhoto RGB")

@@ -17,6 +17,9 @@ final class EditorModel: ObservableObject {
     @Published var pixelChangePercent: Double?
     @Published var lastParametersVerified = false
     @Published var previewSequence = 0
+    @Published var photoSelectionVersion = 0
+    @Published var capturedRAWURL: URL?
+    @Published var capturedFormat = "照片图库"
     @Published var lastElapsedMS: Double?
     @Published var exportLimit: ExportLimit = .safe
     @Published var exportPhase = ""
@@ -205,17 +208,72 @@ final class EditorModel: ObservableObject {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     throw PortError.message("照片读取失败")
                 }
-                sourceData = data
-                photoID = UUID()
-                previousProcessed = nil
-                pixelChangePercent = nil
-                lastSuccessfulPhotoID = nil
-                lastSuccessfulSettings = nil
+                replaceSourceImage(data, format: "照片图库", rawURL: nil)
                 isBusy = false
                 applySettings()
             } catch {
                 isBusy = false
                 status = "照片读取失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Shared new-photo reset also resets the inline UIKit zoom surface.
+    private func replaceSourceImage(_ data: Data, format: String, rawURL: URL?) {
+        debounceTask?.cancel()
+        debounceTask = nil
+        sourceData = data
+        photoID = UUID()
+        photoSelectionVersion += 1
+        capturedRAWURL = rawURL
+        capturedFormat = format
+        original = nil
+        processed = nil
+        previousProcessed = nil
+        compare = false
+        pixelChangePercent = nil
+        lastSuccessfulPhotoID = nil
+        lastSuccessfulSettings = nil
+        lastParametersVerified = false
+        isDirty = false
+    }
+
+    func importCameraCapture(_ capture: CapturedCameraPhoto) {
+        guard !isBusy, !isRendering else {
+            status = "正在处理上一张照片，请重新拍摄"
+            return
+        }
+        isBusy = true
+        status = capture.rawDNGURL == nil ? "正在导入照片…" : "正在显影 RAW/DNG 原片…"
+        Task.detached(priority: .userInitiated) {
+            let prepared: Result<(Data, String), Error> = Result {
+                if let raw = capture.rawDNGURL {
+                    do {
+                        let developed = try RawImageDeveloper.developForSpectralEngine(
+                            dngURL: raw, pixelCeiling: 12_500_000
+                        )
+                        return (developed, capture.modeLabel + " · RAW 经 Core Image 显影")
+                    } catch {
+                        guard let fallback = capture.processedData else { throw error }
+                        return (fallback, capture.modeLabel + " · RAW 显影失败，改用同步 JPEG")
+                    }
+                }
+                guard let data = capture.processedData else {
+                    throw PortError.message("拍摄完成但没有可编辑的图像")
+                }
+                return (data, capture.modeLabel)
+            }
+            await MainActor.run {
+                self.isBusy = false
+                switch prepared {
+                case let .success((data, label)):
+                    self.replaceSourceImage(data, format: label,
+                                            rawURL: capture.rawDNGURL)
+                    self.status = label + " · 正在光谱渲染"
+                    self.applySettings()
+                case let .failure(error):
+                    self.status = "相机照片导入失败：" + error.localizedDescription
+                }
             }
         }
     }
@@ -339,6 +397,7 @@ struct EditorView: View {
     @StateObject private var model = EditorModel()
     @StateObject private var presetStore = PresetStore()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showingCamera = false
     @State private var showSavePreset = false
     @State private var newPresetName = ""
     @State private var copiedStatus = false
@@ -414,6 +473,9 @@ struct EditorView: View {
         Render status: \(model.status)
         Rendered image: \(model.processed == nil ? "No" : "Yes")
         Rendered dimensions: \(dimensions)
+        Photo source: \(model.capturedFormat)
+        RAW retained locally: \(model.capturedRAWURL != nil)
+        Photo source version: \(model.photoSelectionVersion)
         Film: \(model.filmID)
         Paper: \(model.paperID)
         Exposure EV: \(String(format: "%.2f", model.exposureEV))
@@ -568,6 +630,7 @@ struct EditorView: View {
                                 onNeedsHighResolution: { inspectFullResolution() }
                             )
                             .frame(width: g.size.width, height: g.size.height)
+                            .id(model.photoSelectionVersion)
                         }
                     } else {
                         VStack(spacing: 12) {
@@ -600,6 +663,17 @@ struct EditorView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(DarkroomStyle.line))
 
             HStack(spacing: 10) {
+                Button {
+                    showingCamera = true
+                } label: {
+                    Label("拍摄", systemImage: "camera")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DarkroomStyle.accent)
+                .disabled(model.isBusy || model.isRendering)
+
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Label(model.hasPhoto ? "更换照片" : "选择照片", systemImage: "photo.on.rectangle")
                         .font(.system(size: 13, weight: .semibold))
@@ -1299,6 +1373,10 @@ struct EditorView: View {
                 photoSaveFeedback = ""
                 model.importPhoto($0)
             }
+            .onChange(of: model.photoSelectionVersion) { _ in
+                clearInlineHighResolution()
+                photoSaveFeedback = ""
+            }
             .onChange(of: model.previewSequence) { _ in
                 showPreviousFilm = false
                 clearInlineHighResolution()
@@ -1330,6 +1408,12 @@ struct EditorView: View {
             }
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
+            }
+            .fullScreenCover(isPresented: $showingCamera) {
+                SpectraCameraView { capture in
+                    showingCamera = false
+                    model.importCameraCapture(capture)
+                }
             }
 
         }
