@@ -66,8 +66,11 @@ struct MobileLocalMaskEditor: View {
                 Button { add(.luminanceRange) } label: {
                     Label("亮度", systemImage: "sun.max")
                 }
+                Button { add(.colorRange) } label: {
+                    Label("颜色", systemImage: "eyedropper")
+                }
             }
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 10, weight: .semibold))
             .buttonStyle(.bordered)
             .tint(DarkroomStyle.accent)
             .disabled(masks.count >= EditMask.maxCount)
@@ -158,6 +161,8 @@ struct MobileLocalMaskEditor: View {
                             label: "亮度过渡", value: $masks[i].components[0].softness,
                             range: 0...0.5, step: 0.02, suffix: "", disabled: false
                         )
+                    } else if kind == .colorRange {
+                        MaskColourRangePicker(component: $masks[i].components[0])
                     } else {
                         Text("此类型尚不提供触控编辑。")
                             .font(.system(size: 11))
