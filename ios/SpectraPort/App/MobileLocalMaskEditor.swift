@@ -54,7 +54,7 @@ struct MobileLocalMaskEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text("局部蒙版")
                     .font(.system(size: 13, weight: .semibold))

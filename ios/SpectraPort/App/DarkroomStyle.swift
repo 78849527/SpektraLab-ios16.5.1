@@ -22,7 +22,7 @@ struct DarkroomPanel<Content: View>: View {
 
     var body: some View {
         content
-            .padding(9)
+            .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(
@@ -268,7 +268,8 @@ struct DarkroomControlRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        // Compact 38pt slider controls; retain native horizontal drag.
+        HStack(spacing: 5) {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(DarkroomStyle.primary)
@@ -282,7 +283,7 @@ struct DarkroomControlRow: View {
                 disabled: disabled, label: label,
                 onTrackingChange: { isDragging = $0 }
             )
-            .frame(height: 44)
+            .frame(height: 38)
             .accessibilityLabel(label)
 
             Button {
@@ -295,7 +296,7 @@ struct DarkroomControlRow: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(width: 76, alignment: .trailing)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: 38)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -303,7 +304,7 @@ struct DarkroomControlRow: View {
             .accessibilityLabel(label + " 精确输入")
             .accessibilityValue(formatted(value) + suffix)
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: 38)
         .preference(
             key: CompactSliderReadoutKey.self,
             value: isDragging ? label + "  " + formatted(value) + suffix : nil

@@ -1404,7 +1404,7 @@ struct EditorView: View {
 
     private var quickAdjustmentPanel: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text("实时光谱调节")
                         .font(.system(size: 13, weight: .semibold))
@@ -1506,7 +1506,7 @@ struct EditorView: View {
     /// are post-print controls, not substitutes for film exposure/grain.
     private var desktopGradePanel: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text("桌面同源 · 调色")
                         .font(.system(size: 13, weight: .semibold))

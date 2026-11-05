@@ -127,9 +127,9 @@ jobs:
           assert "Self.thumbImage(diameter: 10)" in style
           assert "Self.thumbImage(diameter: 12)" in style
           assert "height: CGFloat = 2" in style
-          assert ".frame(height: 44)" in style
+          assert ".frame(height: 38)" in style
           assert "CompactSliderReadoutKey" in style
-          assert ".frame(minHeight: 44)" in style
+          assert ".frame(minHeight: 38)" in style
           assert 'TextField("数值", text: $precisionText)' in style
           assert "applyPreciseNumber()" in style
           assert "stepButton(" not in style
@@ -141,9 +141,9 @@ jobs:
           assert "if editingMaskOnPhoto {" in editor
           assert "LocalMaskCanvas(" in editor
           assert "showingQuickHelp" in editor
-          assert 'CURRENT_PROJECT_VERSION: "29"' in project
+          assert 'CURRENT_PROJECT_VERSION: "30"' in project
           assert "url = try FullSizeExporter.write(graded, format: format)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
-          print("COMPACT_UI_BUILD29_PASS")
+          print("COMPACT_UI_BUILD30_PASS")
           PY
       - name: Verify all nine navigation actions are in the single middle row
         run: |
@@ -172,8 +172,8 @@ jobs:
           assert 'Label("启动设置", systemImage: "gearshape")' in editor
           assert "LocalMaskCanvas(" in editor
           assert "MaskLuminanceSampling.sample(" in Path("ios/SpectraPort/App/InlineMaskOverlay.swift").read_text()
-          assert 'CURRENT_PROJECT_VERSION: "29"' in project
-          print("NINE_ACTION_COMPACT_NAV_BUILD29_PASS")
+          assert 'CURRENT_PROJECT_VERSION: "30"' in project
+          print("NINE_ACTION_COMPACT_NAV_BUILD30_PASS")
           PY
       - name: Verify hidden navigation chrome and fine slider touch contract
         run: |
@@ -195,15 +195,34 @@ jobs:
           assert "UISlider" in style and "UIViewRepresentable" in style
           assert 'diameter: 10' in style and 'diameter: 12' in style
           assert "height: CGFloat = 2" in style
-          assert ".frame(height: 44)" in style
+          assert ".frame(height: 38)" in style
           assert "accessibilityLabel = label" in style
           assert "onTrackingChange(true)" in style
           assert "onTrackingChange(false)" in style
           assert "TextField(\"数值\", text: $precisionText)" in style
           assert 'VStack(spacing: 0)' in local
-          assert 'CURRENT_PROJECT_VERSION: "29"' in project
+          assert 'CURRENT_PROJECT_VERSION: "30"' in project
           assert "LocalMaskCanvas(" in editor
-          print("FINE_SLIDER_HIDDEN_NAV_BUILD29_PASS")
+          print("FINE_SLIDER_HIDDEN_NAV_BUILD30_PASS")
+          PY
+      - name: Verify dense 38pt control spacing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          style = Path("ios/SpectraPort/App/DarkroomStyle.swift").read_text()
+          editor = Path("ios/SpectraPort/App/EditorView.swift").read_text()
+          local = Path("ios/SpectraPort/App/MobileLocalMaskEditor.swift").read_text()
+          balance = Path("ios/SpectraPort/App/MobileColorBalanceEditor.swift").read_text()
+          assert style.count(".frame(minHeight: 38)") >= 2
+          assert ".frame(height: 38)" in style
+          assert "Self.thumbImage(diameter: 10)" in style
+          assert "Self.thumbImage(diameter: 12)" in style
+          assert "height: CGFloat = 2" in style
+          assert "VStack(alignment: .leading, spacing: 3)" in editor
+          assert "VStack(alignment: .leading, spacing: 3)" in local
+          assert "VStack(alignment: .leading, spacing: 4)" in balance
+          assert "LocalMaskCanvas(" in editor
+          print("DENSE_ROWS_BUILD30_PASS")
           PY
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
@@ -246,15 +265,15 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortFineSliderBeta29"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "29"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortDenseBeta30"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "30"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortFineSliderBeta29'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '29'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortDenseBeta30'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '30'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱细滑杆29'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱密排30'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -269,13 +288,13 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-FineSlider-v0.14.9-beta.10-Build29-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-FineSlider-v0.14.9-beta.10-Build29-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-DenseRows-v0.14.10-beta.11-Build30-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-DenseRows-v0.14.10-beta.11-Build30-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-FineSlider-v0.14.9-beta.10-Build29-unsigned
-          path: ios/build/SpectraPort-iOS16-FineSlider-v0.14.9-beta.10-Build29-unsigned.ipa
+          name: SpectraPort-DenseRows-v0.14.10-beta.11-Build30-unsigned
+          path: ios/build/SpectraPort-iOS16-DenseRows-v0.14.10-beta.11-Build30-unsigned.ipa
           if-no-files-found: error
       # Post-package parity checks: preserve a distributable unsigned IPA even
       # if host-specific Metal numeric fixtures report an Intel GPU mismatch.

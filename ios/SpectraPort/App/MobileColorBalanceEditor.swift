@@ -49,7 +49,7 @@ struct MobileColorBalanceEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("分区色彩平衡")
                     .font(.system(size: 13, weight: .semibold))
