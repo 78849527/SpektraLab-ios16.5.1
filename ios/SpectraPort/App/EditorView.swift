@@ -19,7 +19,6 @@ final class EditorModel: ObservableObject {
     @Published var lastParametersVerified = false
     @Published var previewSequence = 0
     @Published var photoSelectionVersion = 0
-    @Published var capturedRAWURL: URL?
     @Published var capturedFormat = "照片图库"
     @Published var lastElapsedMS: Double?
     @Published var exportLimit: ExportLimit = .safe
@@ -213,7 +212,7 @@ final class EditorModel: ObservableObject {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     throw PortError.message("照片读取失败")
                 }
-                replaceSourceImage(data, format: "照片图库", rawURL: nil)
+                replaceSourceImage(data, format: "照片图库")
                 isBusy = false
                 applySettings()
             } catch {
@@ -224,13 +223,12 @@ final class EditorModel: ObservableObject {
     }
 
     /// Shared new-photo reset also resets the inline UIKit zoom surface.
-    private func replaceSourceImage(_ data: Data, format: String, rawURL: URL?) {
+    private func replaceSourceImage(_ data: Data, format: String) {
         debounceTask?.cancel()
         debounceTask = nil
         sourceData = data
         photoID = UUID()
         photoSelectionVersion += 1
-        capturedRAWURL = rawURL
         capturedFormat = format
         original = nil
         processed = nil
@@ -257,42 +255,12 @@ final class EditorModel: ObservableObject {
 
     func importCameraCapture(_ capture: CapturedCameraPhoto) {
         guard !isBusy, !isRendering else {
-            status = "正在处理上一张照片，请重新拍摄"
+            status = "正在处理上一张照片，请稍后重试"
             return
         }
-        isBusy = true
-        status = capture.rawDNGURL == nil ? "正在导入照片…" : "正在显影 RAW/DNG 原片…"
-        Task.detached(priority: .userInitiated) {
-            let prepared: Result<(Data, String), Error> = Result {
-                if let raw = capture.rawDNGURL {
-                    do {
-                        let developed = try RawImageDeveloper.developForSpectralEngine(
-                            dngURL: raw, pixelCeiling: 12_500_000
-                        )
-                        return (developed, capture.modeLabel + " · RAW 经 Core Image 显影")
-                    } catch {
-                        guard let fallback = capture.processedData else { throw error }
-                        return (fallback, capture.modeLabel + " · RAW 显影失败，改用同步 JPEG")
-                    }
-                }
-                guard let data = capture.processedData else {
-                    throw PortError.message("拍摄完成但没有可编辑的图像")
-                }
-                return (data, capture.modeLabel)
-            }
-            await MainActor.run {
-                self.isBusy = false
-                switch prepared {
-                case let .success((data, label)):
-                    self.replaceSourceImage(data, format: label,
-                                            rawURL: capture.rawDNGURL)
-                    self.status = label + " · 正在光谱渲染"
-                    self.applySettings()
-                case let .failure(error):
-                    self.status = "相机照片导入失败：" + error.localizedDescription
-                }
-            }
-        }
+        replaceSourceImage(capture.processedData, format: capture.modeLabel)
+        status = "系统相机照片已导入，正在进行光谱渲染…"
+        applySettings()
     }
 
     func exportOriginal(
@@ -515,7 +483,7 @@ struct EditorView: View {
         Rendered image: \(model.processed == nil ? "No" : "Yes")
         Rendered dimensions: \(dimensions)
         Photo source: \(model.capturedFormat)
-        RAW retained locally: \(model.capturedRAWURL != nil)
+        Camera capture: native UIImagePickerController (system controls)
         Camera privacy key present: \(!(Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? "").isEmpty)
         Camera authorization code: \(AVCaptureDevice.authorizationStatus(for: .video).rawValue)
         Preview reset fit: available
@@ -1118,14 +1086,6 @@ struct EditorView: View {
                     }
                     .disabled(!canExport)
 
-                    if let rawURL = model.capturedRAWURL {
-                        Button {
-                            shareItem = ShareItem(url: rawURL)
-                        } label: {
-                            Label("分享拍摄 RAW 原片（DNG）", systemImage: "square.and.arrow.up")
-                        }
-                        .disabled(model.isBusy)
-                    }
 
                     Text("高清导出 · 使用原版 full 光谱渲染")
                         .font(.system(size: 12))
@@ -1531,10 +1491,15 @@ struct EditorView: View {
                     selectedTab = .adjust
                 }
             }) {
-                StableSpectraCameraView { capture in
-                    pendingCapture = capture
-                    showingCamera = false
-                }
+                StableSpectraCameraView(
+                    onCapture: { capture in
+                        pendingCapture = capture
+                        showingCamera = false
+                    },
+                    onCancel: {
+                        showingCamera = false
+                    }
+                )
             }
 
         }
