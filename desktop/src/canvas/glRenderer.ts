@@ -112,8 +112,9 @@ float tonePosition(float l, float m0) {
 }
 
 float curve(float x, int row) {
-  float n = ${CURVE_TABLE_SIZE}.0;
-  float u = (clamp(x, 0.0, 1.0) * (n - 1.0) + 0.5) / n;
+  // Match macOS Shaders.metal::curveLookup normalized texture coordinates.
+  // The old (x*(N-1)+0.5)/N gave a different curve than original Metal.
+  float u = clamp(x, 0.0, 1.0);
   return texture(uCurves, vec2(u, (float(row) + 0.5) / 5.0)).r;
 }
 
