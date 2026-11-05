@@ -22,16 +22,17 @@ jobs:
           curve = Path("ios/SpectraPort/Engine/DesktopCurveMath.swift").read_text()
           adjust = Path("ios/SpectraPort/Engine/DesktopAdjustments.swift").read_text()
           assert curve.startswith("// Exact original CurveMath.swift from macOS; only the module-local\n// CGFloat.clamped(to:) helper is supplied below for independent compilation.\n" + (root / "CurveMath.swift").read_text())
-          assert adjust.startswith("// Exact original Adjustments.swift from macOS, plus the shared\n// Layer2Uniforms.tone() body extracted unchanged from Model/Mask.swift.\n" + (root / "Adjustments.swift").read_text())
-          mask = (root / "Mask.swift").read_text()
-          assert adjust.endswith(mask[mask.index("extension Layer2Uniforms {") :].strip() + "\n")
-          print("Mac model and shared tone implementation match exactly")
+          mask = Path("ios/SpectraPort/Engine/DesktopMasks.swift").read_text()
+          assert adjust == "// Unmodified macOS Adjustments.swift. The shared Layer2Uniforms.tone()\n// implementation now comes from the unmodified desktop Mask.swift.\n" + (root / "Adjustments.swift").read_text()
+          assert mask == "// Unmodified macOS Mask.swift (the source also owns shared tone arithmetic).\n" + (root / "Mask.swift").read_text()
+          print("Mac curves, grading and mask models match upstream exactly")
           PY
       - name: Compile desktop source-matched Swift models
         run: |
           swiftc -swift-version 5 -emit-executable \
             ios/SpectraPort/Engine/DesktopCurveMath.swift \
             ios/SpectraPort/Engine/DesktopAdjustments.swift \
+            ios/SpectraPort/Engine/DesktopMasks.swift \
             ios/tests/main.swift \
             -o /tmp/spectraport-layer2-model-tests
       - name: Run parity model tests
