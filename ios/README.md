@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.12.2 / Build 18
+## Current iOS build: v0.13.0 / Build 19
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -116,6 +116,19 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - Photo preview has an explicit "整张" fit-to-frame button (scale + center)
   and double-tap restore, with no bouncing below minimum zoom. Camera and
   Photos-picker source changes also reset the embedded viewer.
+- v0.13.0: new warm-gold dog-head home-screen AppIcon generated locally on
+  the CI Mac as native 1024px and all required iPhone renditions. App now
+  directly presents the editor instead of the old diagnostic landing page.
+  Default cold-start destination is the stable native JPEG camera; a
+  persistent "拍摄 / 编辑" startup choice is available at the top-left gear.
+  Changing it affects future app launches, not the current edit. Diagnostics
+  remain copyable through the top-right information action.
+- The top-right share action generates a full-size original-engine JPEG (within
+  chosen 6MP/12.5MP export limit) and presents the iOS system
+  UIActivityViewController. The Export tab has an explicit "分享到微信 / 其他 App"
+  entry and keeps preview share, PNG and add-only Photos saves. WeChat is
+  visible only if installed and its sharing extension accepts the image;
+  this does not use an unverified WeChat SDK or upload to a server.
 - v0.12.2: the yellow Apply Adjustments action is now a fixed-position
   floating button within the photo preview (upper-right, beneath fit-to-frame).
   It appears only for unapplied edits or when automatic preview is off. The
