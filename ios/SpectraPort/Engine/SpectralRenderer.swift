@@ -34,6 +34,11 @@ final class SpectralRenderer {
     private var appliedSettings: FilmSettings?
     private var desktopLayer2: DesktopLayer2Processor?
 
+    private func needsDesktopLayer2(_ settings: FilmSettings) -> Bool {
+        (settings.adjustments.enabled && !settings.adjustments.isNeutral) ||
+        settings.masks.contains { $0.enabled && !$0.isEmpty && $0.amount > 0 }
+    }
+
     private func gradeProcessor() throws -> DesktopLayer2Processor {
         if let desktopLayer2 { return desktopLayer2 }
         let processor = try DesktopLayer2Processor()
@@ -147,7 +152,7 @@ final class SpectralRenderer {
 
         report("转换 sRGB 并编码文件…")
         let url: URL
-        if settings.adjustments.enabled && !settings.adjustments.isNeutral {
+        if needsDesktopLayer2(settings) {
             guard let raw = output.rgba16 else {
                 throw PortError.message("无法获取 Layer 2 原始印相像素")
             }
@@ -157,7 +162,8 @@ final class SpectralRenderer {
                 width: Int(output.width),
                 height: Int(output.height),
                 rowStridePixels: Int(output.row_stride_px),
-                adjustments: settings.adjustments
+                adjustments: settings.adjustments,
+                masks: settings.masks
             )
             url = try FullSizeExporter.write(graded, format: format)
         } else {
@@ -347,13 +353,14 @@ final class SpectralRenderer {
         }
         // Mac Layer 2 runs on the *encoded ProPhoto print*, after the
         // spectral engine. The neutral branch below remains byte-exact.
-        if settings.adjustments.enabled && !settings.adjustments.isNeutral {
+        if needsDesktopLayer2(settings) {
             let graded = try gradeProcessor().apply(
                 raw: raw,
                 width: Int(output.width),
                 height: Int(output.height),
                 rowStridePixels: Int(output.row_stride_px),
-                adjustments: settings.adjustments
+                adjustments: settings.adjustments,
+                masks: settings.masks
             )
             guard let original = cachedOriginal else {
                 throw PortError.message("预览原图缓存丢失")
