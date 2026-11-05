@@ -70,6 +70,14 @@ done
 xcrun --sdk "$SDK" metallib "${AIRS[@]}" -o "$OUT/spektrafilm.metallib"
 
 rsync -a "$ENGINE/resources/" "$RESOURCE_OUT/"
+# Unmodified macOS Layer 2 shader: the *same* post-print curve/grade kernel.
+# Kept separate from the original engine metallib so it cannot alter Layer 1.
+DESKTOP_LAYER2="$ROOT/modern_UI/Spektrafilm/Spektrafilm/Canvas/Shaders.metal"
+xcrun --sdk "$SDK" metal "$MIN_FLAG" \
+  -fmetal-math-mode=safe -fmetal-math-fp32-functions=precise \
+  -Werror -c "$DESKTOP_LAYER2" -o "$OUT/air/spectraport-desktop-layer2.air"
+xcrun --sdk "$SDK" metallib "$OUT/air/spectraport-desktop-layer2.air" \
+  -o "$RESOURCE_OUT/spectraport-desktop-layer2.metallib"
 cp "$OUT/spektrafilm.metallib" "$RESOURCE_OUT/spektrafilm.metallib"
 if [[ -d "$ENGINE/resources_product/profiles" ]]; then
   mkdir -p "$RESOURCE_OUT/profiles"
