@@ -2,11 +2,16 @@ import SwiftUI
 
 @main
 struct SpectraPortApp: App {
-    // This view intentionally does not create any Metal device, CIContext,
-    // photo picker, or native engine during process launch.
+    @AppStorage("spectraport.startup.destination") private var destination = "camera"
+
+    // Never open the former diagnostic screen on launch. The user may
+    // choose camera/editor from Settings without re-creating the app shell.
     var body: some Scene {
         WindowGroup {
-            DiagnosticHomeView()
+            EditorView(
+                onBack: {},
+                launchCameraOnFirstAppear: destination == "camera"
+            )
         }
     }
 }

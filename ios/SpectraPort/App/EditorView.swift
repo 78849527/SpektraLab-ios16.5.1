@@ -378,10 +378,18 @@ private enum PaperBrowseFilter: String, CaseIterable {
 
 struct EditorView: View {
     let onBack: () -> Void
+    let launchCameraOnFirstAppear: Bool
+
+    init(onBack: @escaping () -> Void, launchCameraOnFirstAppear: Bool = false) {
+        self.onBack = onBack
+        self.launchCameraOnFirstAppear = launchCameraOnFirstAppear
+    }
 
     @StateObject private var model = EditorModel()
     @StateObject private var presetStore = PresetStore()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var hasHandledStartup = false
+    @State private var showingStartupSettings = false
     @State private var showingCamera = false
     @State private var zoomResetToken = 0
     @State private var zoomCommand = 0
@@ -489,6 +497,8 @@ struct EditorView: View {
         Rendered dimensions: \(dimensions)
         Photo source: \(model.capturedFormat)
         Camera capture: native UIImagePickerController (system controls)
+        Startup mode: \(UserDefaults.standard.string(forKey: "spectraport.startup.destination") ?? "camera")
+        Image sharing: UIActivityViewController (installed share extensions)
         Camera privacy key present: \(!(Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? "").isEmpty)
         Camera authorization code: \(AVCaptureDevice.authorizationStatus(for: .video).rawValue)
         Preview reset fit: available
@@ -605,6 +615,27 @@ struct EditorView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Export a true full-resolution spectral JPEG, then open the ordinary
+    /// iOS share sheet so supported installed apps (including WeChat, when
+    /// it exposes a compatible share extension) can receive the image.
+    private func shareFullResolutionToApps() {
+        guard canExport else {
+            model.status = "请先完成当前参数渲染再分享"
+            return
+        }
+        model.exportOriginal(format: .jpeg) { result in
+            switch result {
+            case let .success(output):
+                let item = ShareItem(url: output.url)
+                mostRecentExport = item
+                mostRecentExportLabel = output.summary
+                shareItem = item
+            case let .failure(error):
+                model.status = "生成分享照片失败：" + error.localizedDescription
             }
         }
     }
@@ -1109,6 +1140,20 @@ struct EditorView: View {
         DarkroomPanel {
             DisclosureGroup(isExpanded: $exportExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        shareFullResolutionToApps()
+                    } label: {
+                        Label("分享到微信 / 其他 App", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DarkroomStyle.accent)
+                    .disabled(!canExport)
+
+                    Text("打开 iOS 系统分享面板；微信等目标以设备实际可用的分享扩展为准。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+
                     Menu {
                         Button("JPEG · sRGB") { exportPreview(.jpeg) }
                         Button("PNG · sRGB") { exportPreview(.png) }
@@ -1434,10 +1479,12 @@ struct EditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onBack) {
-                        Image(systemName: "film.stack")
+                    Button {
+                        showingStartupSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
                     }
-                    .accessibilityLabel("返回诊断")
+                    .accessibilityLabel("启动偏好设置")
                     .foregroundStyle(DarkroomStyle.accent)
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
@@ -1449,10 +1496,11 @@ struct EditorView: View {
                     .accessibilityLabel("复制诊断状态")
 
                     Button {
-                        selectedTab = .export
+                        shareFullResolutionToApps()
                     } label: {
-                        Label("导出", systemImage: "square.and.arrow.up")
+                        Label("分享", systemImage: "square.and.arrow.up")
                     }
+                    .disabled(!canExport)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DarkroomStyle.accent)
                 }
@@ -1487,6 +1535,15 @@ struct EditorView: View {
                 model.onSuccessfulRender = { [weak presetStore] settings in
                     presetStore?.recordUse(settings)
                 }
+                guard !hasHandledStartup else { return }
+                hasHandledStartup = true
+                if launchCameraOnFirstAppear {
+                    // Schedule after the first SwiftUI hierarchy pass so the
+                    // native UIKit camera is presented from a mounted view.
+                    DispatchQueue.main.async {
+                        openCamera()
+                    }
+                }
             }
             .alert("保存自定义预设", isPresented: $showSavePreset) {
                 TextField("预设名称", text: $newPresetName)
@@ -1503,6 +1560,9 @@ struct EditorView: View {
             }
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
+            }
+            .sheet(isPresented: $showingStartupSettings) {
+                StartupSettingsView()
             }
             .fullScreenCover(isPresented: $showingCamera, onDismiss: {
                 if let capture = pendingCapture {
