@@ -48,7 +48,7 @@ enum FilmCatalog {
     static func paperName(_ id: String) -> String { papers.first(where: { $0.id == id })?.name ?? id }
 }
 
-struct FilmSettings: Equatable {
+struct FilmSettings: Equatable, Codable {
     let filmStock: String
     let printStock: String
     let exposureEV: Double
