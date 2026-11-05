@@ -156,7 +156,13 @@ struct InlineMaskOverlay: View {
                                 Double(atan2(b.y - a.y, b.x - a.x))))
                             .accessibilityLabel("拖动线性渐变位置")
                             .gesture(
-                                DragGesture(minimumDistance: 0)
+                                // The capsule rotates with the gradient.
+                                // Resolve translation in photo-view axes,
+                                // otherwise a vertical line may drag sideways.
+                                DragGesture(
+                                    minimumDistance: 0,
+                                    coordinateSpace: .named("mask-photo-overlay")
+                                )
                                     .onChanged { value in
                                         moveLine(value.translation, rect: photoRect)
                                     }
