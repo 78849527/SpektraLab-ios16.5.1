@@ -1,0 +1,89 @@
+name: iOS 16 native port
+on:
+  push:
+    branches:
+      - port/ios16-native-engine
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'engine/**'
+      - '.github/workflows/ios16.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-iphoneos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout complete original repository
+        uses: actions/checkout@v4
+      - name: Toolchain and available SDKs
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --find metal
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build original C++ engine and exact Metal kernels for iOS 16
+        run: bash ios/scripts/build-engine.sh
+      - name: Generate dog-head iPhone App Icon
+        run: |
+          swift ios/scripts/generate-dog-icon.swift
+          test -s ios/SpectraPort/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          sips -g pixelWidth ios/SpectraPort/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png | grep -q "1024"
+      - name: Generate iOS SwiftUI project
+        run: cd ios && xcodegen generate --spec project.yml
+      - name: Compile RELEASE physical-device app without debug dylib
+        run: |
+          xcodebuild -project ios/SpectraPort.xcodeproj -scheme SpectraPort \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/DerivedData \
+            ENABLE_DEBUG_DYLIB=NO CODE_SIGNING_ALLOWED=NO build
+      - name: Verify deployment version and single-binary layout
+        run: |
+          APP="ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app"
+          test -f "$APP/SpectraPort"
+          test ! -f "$APP/SpectraPort.debug.dylib"
+          test -s "$APP/Assets.car"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName" "$APP/Info.plist" | grep -q "AppIcon"
+          /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx "16.0"
+          /usr/libexec/PlistBuddy -c "Print NSCameraUsageDescription" "$APP/Info.plist" | grep -q "摄像头"
+          test -f "$APP/SpectraPort"
+          test ! -f ios/SpectraPort/App/SpectraCameraView.swift
+          test ! -f ios/SpectraPort/Engine/RawImageDeveloper.swift
+          grep -q "picker.showsCameraControls = true" ios/SpectraPort/App/StableSpectraCameraView.swift
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "19"
+          otool -L "$APP/SpectraPort"
+      - name: Package unsigned RELEASE IPA for manual signing
+        run: |
+          mkdir -p ios/build/package/Payload
+          cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/package/Payload/
+          cd ios/build/package
+          zip -q -r ../SpectraPort-ios16-v0.13.0-dog-startup-share-unsigned.ipa Payload
+      - name: Upload device build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpectraPort-ios16-v0.13.0-dog-startup-share-unsigned
+          path: ios/build/SpectraPort-ios16-v0.13.0-dog-startup-share-unsigned.ipa
+          if-no-files-found: error
+      - name: Publish public IPA download (unofficial prerelease)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/port/ios16-native-engine'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILE="ios/build/SpectraPort-ios16-v0.13.0-dog-startup-share-unsigned.ipa"
+          TAG="ios16-v0.13.0"
+          test -s "$FILE"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            gh release create "$TAG" "$FILE" \
+              --target "$GITHUB_SHA" \
+              --title "SpectraPort iOS 16 v0.13.0 (unofficial test)" \
+              --notes "Unofficial iOS 16 test port based on SpektraLab. Adds a distinctive dog-head iOS app icon, opens directly in the native system camera by default, and supports saved startup preference (camera or editor). Editor settings are under the gear icon; the high-res share button opens standard iOS ActivityViewController for installed apps such as WeChat when compatible. Original offline spectral engine and darkroom UI retained. The IPA is unsigned and requires manual signing. Not yet validated on all iPhone hardware." \
+              --prerelease
+          fi
+          gh release view "$TAG" --json url -q .url
