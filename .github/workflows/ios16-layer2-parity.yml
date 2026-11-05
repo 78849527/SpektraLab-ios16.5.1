@@ -87,6 +87,8 @@ jobs:
           assert "scroll.resetToFit()" in bridge
           assert "lockToFit: maskEditing" in bridge
           assert "uiView.locksZoomToFit = maskEditing" in bridge
+          assert "if scroll.locksZoomToFit {" in bridge
+          assert "if zoomCommand > 0 && !maskEditing {" in bridge
           assert "if !editingMaskOnPhoto { fitWholePhoto() }" in editor
           assert "url = try FullSizeExporter.write(graded, format: format)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
           print("LOCAL_PREVIEW_FIT_LOCK_CONTRACT_PASS")
