@@ -11,10 +11,14 @@ struct InlineZoomPreview: UIViewRepresentable {
     let resetToken: Int
     let zoomCommand: Int
     let zoomDirection: Int
+    /// Lock to exact aspect-fit while mask handles are edited on top.
+    let maskEditing: Bool
     let onNeedsHighResolution: () -> Void
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
         weak var scroll: DetailImageScrollView?
+        weak var doubleTapGesture: UITapGestureRecognizer?
+        var wasMaskEditing = false
         var loadedID: String?
         var requestedForID: String?
         var highResolutionReady = false
@@ -113,6 +117,7 @@ struct InlineZoomPreview: UIViewRepresentable {
         )
         gesture.numberOfTapsRequired = 2
         scroll.addGestureRecognizer(gesture)
+        context.coordinator.doubleTapGesture = gesture
         updateUIView(scroll, context: context)
         return scroll
     }
@@ -120,6 +125,16 @@ struct InlineZoomPreview: UIViewRepresentable {
     func updateUIView(_ uiView: DetailImageScrollView, context: Context) {
         let coordinator = context.coordinator
         coordinator.onNeedsHighResolution = onNeedsHighResolution
+        // Prevent pinch/pan from changing the coordinate transform while
+        // the SwiftUI overlay works in the photo's aspect-fit viewport.
+        // Re-enable the original photo loupe immediately on exiting masks.
+        uiView.isScrollEnabled = !maskEditing
+        uiView.pinchGestureRecognizer?.isEnabled = !maskEditing
+        coordinator.doubleTapGesture?.isEnabled = !maskEditing
+        if maskEditing && !coordinator.wasMaskEditing {
+            uiView.resetToFit()
+        }
+        coordinator.wasMaskEditing = maskEditing
         let identifier = highResolutionURL?.path ?? "preview:\(ObjectIdentifier(preview))"
 
         if coordinator.loadedID != identifier {
