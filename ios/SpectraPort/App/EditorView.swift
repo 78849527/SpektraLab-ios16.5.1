@@ -180,6 +180,25 @@ final class EditorModel: ObservableObject {
     }
 }
 
+private enum FilmBrowseFilter: String, CaseIterable {
+    case all = "全部"
+    case kodak = "Kodak"
+    case fuji = "Fujifilm"
+    case cinema = "电影负片"
+
+    func accepts(_ stock: FilmCatalog.Stock) -> Bool {
+        let name = stock.name.lowercased()
+        switch self {
+        case .all: return true
+        case .kodak: return name.contains("kodak")
+        case .fuji: return name.contains("fujifilm")
+        case .cinema:
+            return name.contains("vision3") || name.contains("verita") ||
+                   name.contains("cine") || name.contains("500t")
+        }
+    }
+}
+
 struct EditorView: View {
     let onBack: () -> Void
 
@@ -192,6 +211,23 @@ struct EditorView: View {
     @State private var shareItem: ShareItem?
     @State private var mostRecentExport: ShareItem?
     @State private var mostRecentExportLabel = ""
+
+    @State private var filmFilter: FilmBrowseFilter = .all
+    @State private var cameraExpanded = true
+    @State private var darkroomExpanded = false
+    @State private var presetsExpanded = false
+    @State private var exportExpanded = false
+
+    private var filteredFilms: [FilmCatalog.Stock] {
+        FilmCatalog.films.filter { filmFilter.accepts($0) }
+    }
+
+    private var canExport: Bool {
+        !model.isBusy && !model.isDirty && model.processed != nil
+    }
+
+    private var activeFilmName: String { FilmCatalog.filmName(model.filmID) }
+    private var activePaperName: String { FilmCatalog.paperName(model.paperID) }
 
     private func copyStatus() {
         let metalName = MTLCreateSystemDefaultDevice()?.name ?? "Metal unavailable"
@@ -226,6 +262,7 @@ struct EditorView: View {
         Last high-res export: \(model.lastExportInfo)
         Saved presets: \(presetStore.presets.count)
         Recent combinations: \(presetStore.recentPairs.count)
+        UI: darkroom v0.7
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
@@ -233,7 +270,7 @@ struct EditorView: View {
     }
 
     private func exportPreview(_ format: PreviewExporter.Format) {
-        guard let image = model.processed, !model.isBusy, !model.isDirty else {
+        guard let image = model.processed, canExport else {
             model.status = "请先应用全部设置，然后再导出"
             return
         }
@@ -261,232 +298,489 @@ struct EditorView: View {
         }
     }
 
-    private func sliderRow(_ name: String, value: Binding<Double>,
-                           range: ClosedRange<Double>, step: Double,
-                           suffix: String = "") -> some View {
-        VStack(spacing: 5) {
+    private var previewSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(name).font(.subheadline)
+                Text("THE DARKROOM")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .tracking(2.8)
+                    .foregroundStyle(DarkroomStyle.accent)
                 Spacer()
-                Text(String(format: "%.2f", value.wrappedValue) + suffix)
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                Text("SPECTRAL FILM / iOS")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(DarkroomStyle.secondary)
             }
-            Slider(value: value, in: range, step: step)
+
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black)
+
+                Group {
+                    if let image = model.compare ? model.original : model.processed {
+                        GeometryReader { g in
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: g.size.width, height: g.size.height)
+                        }
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "camera.aperture")
+                                .font(.system(size: 48, weight: .ultraLight))
+                                .foregroundStyle(DarkroomStyle.accent)
+                            Text("让光线经过胶片")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(DarkroomStyle.primary)
+                            Text("导入照片，使用原版光谱引擎冲印")
+                                .font(.system(size: 11))
+                                .foregroundStyle(DarkroomStyle.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Text(model.compare ? "ORIGINAL" : "FILM PREVIEW")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(1.4)
+                    .foregroundStyle(DarkroomStyle.primary.opacity(0.9))
+                    .padding(8)
+                    .background(Color.black.opacity(0.65), in: Capsule())
+                    .padding(12)
+            }
+            .frame(height: min(UIScreen.main.bounds.height * 0.40, 360))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(DarkroomStyle.line))
+
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label(model.hasPhoto ? "更换照片" : "选择照片", systemImage: "photo.on.rectangle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
                 .disabled(model.isBusy)
+
+                Button {
+                    model.compare.toggle()
+                } label: {
+                    Label(model.compare ? "显示效果" : "对比原图", systemImage: "square.on.square")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                .disabled(model.processed == nil || model.isBusy)
+            }
         }
+    }
+
+    private var filmSection: some View {
+        DarkroomPanel {
+            VStack(alignment: .leading, spacing: 13) {
+                DarkroomSectionTitle(number: "01", title: "胶片", subtitle: "左右滑动选择")
+
+                HStack(spacing: 8) {
+                    Image(systemName: "film.stack")
+                        .foregroundStyle(DarkroomStyle.accent)
+                    Text(activeFilmName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DarkroomStyle.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer()
+                    Menu {
+                        ForEach(FilmCatalog.films) { stock in
+                            Button(stock.name) { model.selectFilm(stock.id) }
+                        }
+                    } label: {
+                        Label("列表", systemImage: "chevron.down")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(DarkroomStyle.accent)
+                    }
+                    .disabled(model.isBusy)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(FilmBrowseFilter.allCases, id: \.self) { filter in
+                            DarkroomChip(
+                                title: filter.rawValue, selected: filmFilter == filter
+                            ) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    filmFilter = filter
+                                }
+                            }
+                        }
+                    }
+                }
+
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 10) {
+                            ForEach(filteredFilms) { stock in
+                                FilmStockCard(
+                                    name: stock.name,
+                                    selected: stock.id == model.filmID
+                                ) {
+                                    guard !model.isBusy else { return }
+                                    model.selectFilm(stock.id)
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        reader.scrollTo(stock.id, anchor: .center)
+                                    }
+                                }
+                                .id(stock.id)
+                                .disabled(model.isBusy)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .onAppear {
+                        reader.scrollTo(model.filmID, anchor: .center)
+                    }
+                    .onChange(of: model.filmID) { newValue in
+                        if filteredFilms.contains(where: { $0.id == newValue }) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                reader.scrollTo(newValue, anchor: .center)
+                            }
+                        }
+                    }
+                    .onChange(of: filmFilter) { _ in
+                        if filteredFilms.contains(where: { $0.id == model.filmID }) {
+                            reader.scrollTo(model.filmID, anchor: .center)
+                        }
+                    }
+                }
+                Text("选中胶片后，将自动匹配原版配置推荐的相纸；可在下方手动更换。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
+            }
+        }
+    }
+
+    private var paperSection: some View {
+        DarkroomPanel {
+            VStack(alignment: .leading, spacing: 11) {
+                DarkroomSectionTitle(number: "02", title: "相纸", subtitle: "下拉选择")
+                Menu {
+                    ForEach(FilmCatalog.papers) { stock in
+                        Button {
+                            model.paperID = stock.id
+                        } label: {
+                            if stock.id == model.paperID {
+                                Label(stock.name, systemImage: "checkmark")
+                            } else {
+                                Text(stock.name)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "square.stack.3d.up")
+                            .foregroundStyle(DarkroomStyle.accent)
+                        Text(activePaperName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(DarkroomStyle.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .foregroundStyle(DarkroomStyle.accent)
+                    }
+                    .padding(13)
+                    .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .disabled(model.isBusy)
+            }
+        }
+    }
+
+    private var controlsSection: some View {
+        VStack(spacing: 12) {
+            DarkroomPanel {
+                DisclosureGroup(isExpanded: $cameraExpanded) {
+                    VStack(spacing: 18) {
+                        DarkroomControlRow(
+                            label: "曝光补偿", value: $model.exposureEV,
+                            range: -3...3, step: 0.1, suffix: " EV",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "胶片颗粒", value: $model.grainAmount,
+                            range: 0...2, step: 0.1, suffix: "×",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "光晕强度", value: $model.halationAmount,
+                            range: 0...3, step: 0.1, suffix: "×",
+                            disabled: model.isBusy
+                        )
+                    }
+                    .padding(.top, 16)
+                } label: {
+                    DarkroomSectionTitle(number: "03", title: "拍摄与胶片", subtitle: "3 项参数")
+                }
+                .tint(DarkroomStyle.accent)
+            }
+            DarkroomPanel {
+                DisclosureGroup(isExpanded: $darkroomExpanded) {
+                    VStack(spacing: 18) {
+                        DarkroomControlRow(
+                            label: "相纸曝光", value: $model.printExposure,
+                            range: 0.2...3, step: 0.05, suffix: "×",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "放大机 M 滤色", value: $model.magentaShift,
+                            range: -0.5...0.5, step: 0.05, suffix: "",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "放大机 Y 滤色", value: $model.yellowShift,
+                            range: -0.5...0.5, step: 0.05, suffix: "",
+                            disabled: model.isBusy
+                        )
+                    }
+                    .padding(.top, 16)
+                } label: {
+                    DarkroomSectionTitle(number: "04", title: "暗房冲印", subtitle: "3 项参数")
+                }
+                .tint(DarkroomStyle.accent)
+            }
+        }
+    }
+
+    private var presetsSection: some View {
+        DarkroomPanel {
+            DisclosureGroup(isExpanded: $presetsExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Button {
+                            newPresetName = activeFilmName + " · 自定义"
+                            showSavePreset = true
+                        } label: {
+                            Label("保存参数", systemImage: "bookmark")
+                        }
+                        .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty)
+
+                        Menu {
+                            ForEach(presetStore.presets) { preset in
+                                Button(preset.name) { model.loadLook(preset.settings) }
+                            }
+                        } label: {
+                            Label("载入预设", systemImage: "square.stack")
+                        }
+                        .disabled(model.isBusy || presetStore.presets.isEmpty)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(DarkroomStyle.accent)
+
+                    HStack {
+                        Button("恢复默认参数") { model.restoreDefaults() }
+                        Spacer()
+                        if !presetStore.presets.isEmpty {
+                            Menu {
+                                ForEach(presetStore.presets) { preset in
+                                    Button(role: .destructive) {
+                                        presetStore.remove(id: preset.id)
+                                    } label: {
+                                        Text("删除「\(preset.name)」")
+                                    }
+                                }
+                            } label: {
+                                Label("删除预设", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(DarkroomStyle.secondary)
+                    .disabled(model.isBusy)
+
+                    if !presetStore.recentPairs.isEmpty {
+                        Menu {
+                            ForEach(presetStore.recentPairs) { item in
+                                Button(
+                                    "\(FilmCatalog.filmName(item.filmID)) / \(FilmCatalog.paperName(item.paperID))"
+                                ) {
+                                    model.selectPair(film: item.filmID, paper: item.paperID)
+                                }
+                            }
+                        } label: {
+                            Label("最近使用的胶片与相纸", systemImage: "clock.arrow.circlepath")
+                                .font(.system(size: 12))
+                                .foregroundStyle(DarkroomStyle.accent)
+                        }
+                        .disabled(model.isBusy)
+                    }
+
+                    Text("最多 30 组本地预设。载入后点击底部「应用调整」。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
+                .padding(.top, 14)
+            } label: {
+                DarkroomSectionTitle(
+                    number: "05", title: "我的预设",
+                    subtitle: "\(presetStore.presets.count) 组已保存"
+                )
+            }
+            .tint(DarkroomStyle.accent)
+        }
+    }
+
+    private var exportSection: some View {
+        DarkroomPanel {
+            DisclosureGroup(isExpanded: $exportExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Menu {
+                        Button("JPEG · sRGB") { exportPreview(.jpeg) }
+                        Button("PNG · sRGB") { exportPreview(.png) }
+                    } label: {
+                        Label("分享 1440px 预览图", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(!canExport)
+
+                    Text("高清导出 · 使用原版 full 光谱渲染")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DarkroomStyle.secondary)
+
+                    Picker("导出分辨率", selection: $model.exportLimit) {
+                        ForEach(ExportLimit.allCases) { item in
+                            Text(item.rawValue).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(model.isBusy)
+
+                    HStack(spacing: 10) {
+                        Button("导出 JPEG") { exportOriginal(.jpeg) }
+                            .frame(maxWidth: .infinity)
+                        Button("导出 PNG") { exportOriginal(.png) }
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DarkroomStyle.accent)
+                    .disabled(!canExport)
+
+                    if let last = mostRecentExport {
+                        Text(mostRecentExportLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                        Button {
+                            if FileManager.default.fileExists(atPath: last.url.path) {
+                                shareItem = ShareItem(url: last.url)
+                            } else {
+                                model.status = "文件已被系统清理，请重新导出"
+                                mostRecentExport = nil
+                            }
+                        } label: {
+                            Label("再次分享最近导出文件", systemImage: "arrowshape.turn.up.right")
+                        }
+                        .disabled(model.isBusy)
+                    }
+                    Text("超过所选像素上限会降采样；预览与高清导出使用不同渲染层级。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
+                .padding(.top, 15)
+                .font(.system(size: 13))
+            } label: {
+                DarkroomSectionTitle(number: "06", title: "导出与分享", subtitle: "JPEG / PNG")
+            }
+            .tint(DarkroomStyle.accent)
+        }
+    }
+
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(model.isDirty ? DarkroomStyle.accent : Color.green.opacity(0.8))
+                    .frame(width: 6, height: 6)
+                Text(model.isDirty ? "尚有未应用的修改" : "当前状态")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DarkroomStyle.secondary)
+            }
+            Text(model.status)
+                .font(.system(size: 11))
+                .foregroundStyle(DarkroomStyle.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if model.isBusy {
+                ProgressView(model.exportPhase.isEmpty ? "光谱引擎处理中…" : model.exportPhase)
+                    .tint(DarkroomStyle.accent)
+            }
+            if FilmCatalog.films.isEmpty || FilmCatalog.papers.isEmpty {
+                Text("原版胶片或相纸资源加载失败，请复制诊断。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.isDirty ? "待应用" : "光谱引擎")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(model.isDirty ? DarkroomStyle.accent : DarkroomStyle.primary)
+                Text(model.lastElapsedMS.map { String(format: "%.0f ms", $0) } ?? "81 波长 · Metal")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(DarkroomStyle.secondary)
+            }
+            .frame(minWidth: 94, alignment: .leading)
+
+            Button {
+                model.applySettings()
+            } label: {
+                HStack(spacing: 8) {
+                    if model.isBusy {
+                        ProgressView().tint(DarkroomStyle.background)
+                    } else {
+                        Image(systemName: model.isDirty ? "wand.and.stars" : "arrow.clockwise")
+                    }
+                    Text(model.isDirty ? "应用调整" : "重新渲染")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(DarkroomStyle.background)
+            .background(
+                model.isBusy ? DarkroomStyle.secondary : DarkroomStyle.accent,
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .disabled(model.isBusy || !model.hasPhoto || model.filmID.isEmpty || model.paperID.isEmpty)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            DarkroomStyle.background
+                .overlay(alignment: .top) { DarkroomStyle.line.frame(height: 1) }
+        )
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    Group {
-                        if let image = model.compare ? model.original : model.processed {
-                            GeometryReader { geometry in
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: geometry.size.width, height: geometry.size.height)
-                            }
-                        } else {
-                            VStack(spacing: 14) {
-                                Image(systemName: "camera.filters")
-                                    .font(.system(size: 48, weight: .ultraLight))
-                                Text("原版光谱胶片模拟")
-                                    .font(.headline)
-                                Text("C++20 · Metal · iOS 16")
-                                    .font(.footnote)
-                            }
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
-                    .frame(height: min(UIScreen.main.bounds.height * 0.43, 400))
-                    .frame(maxWidth: .infinity)
-                    .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
-
-                    HStack(spacing: 12) {
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("选择照片", systemImage: "photo.on.rectangle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.isBusy)
-
-                        Button(model.compare ? "查看模拟" : "查看原图") {
-                            model.compare.toggle()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.processed == nil || model.isBusy)
-                    }
-
-                    Menu {
-                        Button("导出 JPEG（sRGB）") { exportPreview(.jpeg) }
-                        Button("导出 PNG（sRGB）") { exportPreview(.png) }
-                    } label: {
-                        Label("分享／保存当前预览（最长边 1440px）", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(model.isBusy || model.isDirty || model.processed == nil)
-
-                    if let last = mostRecentExport {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("最近导出文件").font(.subheadline.weight(.semibold))
-                            Text(mostRecentExportLabel)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Button {
-                                if FileManager.default.fileExists(atPath: last.url.path) {
-                                    shareItem = ShareItem(url: last.url)
-                                } else {
-                                    model.status = "最近导出文件已被系统清理，请重新导出"
-                                    mostRecentExport = nil
-                                }
-                            } label: {
-                                Label("再次分享／保存", systemImage: "square.and.arrow.up")
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(model.isBusy)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("高清导出").font(.headline)
-                        Picker("分辨率与内存保护", selection: $model.exportLimit) {
-                            ForEach(ExportLimit.allCases) { option in
-                                Text(option.rawValue).tag(option)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .disabled(model.isBusy)
-                        HStack(spacing: 12) {
-                            Button("高清 JPEG") { exportOriginal(.jpeg) }
-                            Button("高清 PNG") { exportOriginal(.png) }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.isBusy || model.isDirty || model.processed == nil)
-                        Text("超出像素上限会降采样；此导出独立运行原版 full 层级，不会拉伸预览图。")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if model.isBusy {
-                        ProgressView(model.exportPhase.isEmpty ? "原版引擎处理中…" : model.exportPhase)
-                    }
-                    Text(model.status)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, minHeight: 30)
-                    if FilmCatalog.films.isEmpty || FilmCatalog.papers.isEmpty {
-                        Text("原版胶片或相纸配置加载失败，请复制状态反馈。")
-                            .font(.footnote).foregroundStyle(.red)
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("自定义胶片预设").font(.headline)
-                        HStack(spacing: 10) {
-                            Button {
-                                newPresetName = "\(FilmCatalog.filmName(model.filmID)) · 自定义"
-                                showSavePreset = true
-                            } label: {
-                                Label("保存当前参数", systemImage: "bookmark")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty)
-
-                            Menu {
-                                if presetStore.presets.isEmpty {
-                                    Text("暂无保存的预设")
-                                } else {
-                                    ForEach(presetStore.presets) { preset in
-                                        Button(preset.name) { model.loadLook(preset.settings) }
-                                    }
-                                }
-                            } label: {
-                                Label("载入预设", systemImage: "square.stack")
-                            }
-                            .disabled(model.isBusy || presetStore.presets.isEmpty)
-                        }
-                        HStack {
-                            Button("恢复默认参数") { model.restoreDefaults() }
-                                .disabled(model.isBusy)
-                            Spacer()
-                            if !presetStore.presets.isEmpty {
-                                Menu {
-                                    ForEach(presetStore.presets) { preset in
-                                        Button(role: .destructive) {
-                                            presetStore.remove(id: preset.id)
-                                        } label: {
-                                            Text("删除「\(preset.name)」")
-                                        }
-                                    }
-                                } label: {
-                                    Label("删除预设", systemImage: "trash")
-                                }
-                                .disabled(model.isBusy)
-                            }
-                        }
-                        if !presetStore.recentPairs.isEmpty {
-                            Menu {
-                                ForEach(presetStore.recentPairs) { item in
-                                    Button("\(FilmCatalog.filmName(item.filmID)) / \(FilmCatalog.paperName(item.paperID))") {
-                                        model.selectPair(film: item.filmID, paper: item.paperID)
-                                    }
-                                }
-                            } label: {
-                                Label("最近使用的胶片／相纸组合", systemImage: "clock.arrow.circlepath")
-                            }
-                            .disabled(model.isBusy)
-                        }
-                        Text("预设及最近组合只保存在本机。载入后点击「应用设置」，不会修改原版引擎。")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("原版胶片与相纸").font(.headline)
-                        Picker("胶片", selection: Binding(
-                            get: { model.filmID },
-                            set: { model.selectFilm($0) }
-                        )) {
-                            ForEach(FilmCatalog.films) { stock in
-                                Text(stock.name).tag(stock.id)
-                            }
-                        }
-                        .disabled(model.isBusy || FilmCatalog.films.isEmpty)
-                        Picker("相纸", selection: $model.paperID) {
-                            ForEach(FilmCatalog.papers) { stock in
-                                Text(stock.name).tag(stock.id)
-                            }
-                        }
-                        .disabled(model.isBusy || FilmCatalog.papers.isEmpty)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(spacing: 12) {
-                        sliderRow("相机曝光补偿", value: $model.exposureEV, range: -3...3, step: 0.1, suffix: " EV")
-                        sliderRow("胶片颗粒", value: $model.grainAmount, range: 0...2, step: 0.1, suffix: "×")
-                        sliderRow("光晕强度", value: $model.halationAmount, range: 0...3, step: 0.1, suffix: "×")
-                        sliderRow("相纸曝光", value: $model.printExposure, range: 0.2...3, step: 0.05, suffix: "×")
-                        sliderRow("放大机 M 滤色偏移", value: $model.magentaShift, range: -0.5...0.5, step: 0.05)
-                        sliderRow("放大机 Y 滤色偏移", value: $model.yellowShift, range: -0.5...0.5, step: 0.05)
-                    }
-                    Button {
-                        model.applySettings()
-                    } label: {
-                        Label(model.isDirty ? "应用设置（有未渲染修改）" : "重新渲染", systemImage: "wand.and.stars")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty || !model.hasPhoto)
-
-                    Text("胶片／相纸与参数均由原版引擎计算。调整后点击应用；可导出 1440px 的 JPEG/PNG 预览。高清导出支持最高 12.5MP，超出会降采样以保护内存。")
-                        .font(.caption2).foregroundStyle(.secondary)
+                    previewSection
+                    filmSection
+                    paperSection
+                    controlsSection
+                    presetsSection
+                    exportSection
+                    statusSection
                 }
-                .padding()
+                .padding(.horizontal, 15)
+                .padding(.top, 14)
+                .padding(.bottom, 20)
             }
+            .background(DarkroomStyle.background.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
             .navigationTitle("SpectraPort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -494,12 +788,16 @@ struct EditorView: View {
                     Button(action: onBack) {
                         Label("返回诊断", systemImage: "chevron.left")
                     }
+                    .foregroundStyle(DarkroomStyle.accent)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(copiedStatus ? "已复制" : "复制状态") { copyStatus() }
+                        .foregroundStyle(DarkroomStyle.accent)
                 }
             }
-            .onChange(of: selectedPhoto) { newValue in model.importPhoto(newValue) }
+            .toolbarBackground(DarkroomStyle.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .onChange(of: selectedPhoto) { model.importPhoto($0) }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
             .onChange(of: model.grainAmount) { _ in model.markDirty() }
@@ -516,18 +814,19 @@ struct EditorView: View {
                 TextField("预设名称", text: $newPresetName)
                 Button("保存") {
                     if presetStore.save(name: newPresetName, settings: model.currentSettings) {
-                        model.status = "已在本机保存预设「\(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines))」"
+                        model.status = "已在本机保存预设"
                     } else {
-                        model.status = "预设名称不能为空，且胶片参数必须有效"
+                        model.status = "预设名称不能为空，且参数必须有效"
                     }
                 }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("同名预设会被更新。最多保留 30 组，保存在此设备上。")
+                Text("同名预设将更新，最多保存 30 组。")
             }
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
             }
         }
+        .preferredColorScheme(.dark)
     }
 }
