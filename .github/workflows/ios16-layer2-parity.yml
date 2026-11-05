@@ -94,7 +94,7 @@ jobs:
           assert "chooseLuminance(" in overlay
           assert "MaskLuminanceSampling.sample(" in overlay
           assert "shape.kind == .luminanceRange" in overlay
-          assert "点击或拖动上方照片取样亮度" in Path("ios/SpectraPort/App/MobileLocalMaskEditor.swift").read_text()
+          assert "在照片上点击取样亮度" in Path("ios/SpectraPort/App/MobileLocalMaskEditor.swift").read_text()
           assert "UIScrollView" not in canvas or "no UIScrollView" in canvas
           assert ".scaleEffect(" not in canvas
           assert "let photoRect: CGRect" in overlay
