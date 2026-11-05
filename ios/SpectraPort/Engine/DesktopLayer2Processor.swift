@@ -50,9 +50,15 @@ final class DesktopLayer2Processor {
             throw PortError.message("分配 Layer 2 空蒙版纹理失败")
         }
 
-        let lutDesc = MTLTextureDescriptor.texture3DDescriptor(
-            pixelFormat: .rgba16Float,
-            width: 2, height: 2, depth: 2, mipmapped: false)
+        // Metal Swift's MTLTextureDescriptor has no static 3-D factory.
+        // Construct the descriptor explicitly for iOS 16.
+        let lutDesc = MTLTextureDescriptor()
+        lutDesc.textureType = .type3D
+        lutDesc.pixelFormat = .rgba16Float
+        lutDesc.width = 2
+        lutDesc.height = 2
+        lutDesc.depth = 2
+        lutDesc.mipmapLevelCount = 1
         lutDesc.usage = [.shaderRead]
         guard let lut = device.makeTexture(descriptor: lutDesc) else {
             throw PortError.message("分配 Layer 2 LUT 占位纹理失败")
