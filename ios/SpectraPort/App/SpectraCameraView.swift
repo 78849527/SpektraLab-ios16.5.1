@@ -32,6 +32,15 @@ final class SpectraCameraController: NSObject, ObservableObject {
     var onCapture: ((CapturedCameraPhoto) -> Void)?
 
     func start() {
+        // A missing privacy string terminates iOS processes when requesting
+        // camera access. Avoid touching AVFoundation's authorization path if
+        // signing/project generation omitted that string.
+        guard let reason = Bundle.main.object(forInfoDictionaryKey:
+                    "NSCameraUsageDescription") as? String,
+              !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            status = "安装包缺少系统相机权限说明，请升级 App；尚未请求相机访问"
+            return
+        }
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             startConfiguredSession()
@@ -236,16 +245,26 @@ private final class CameraPreviewSurface: UIView {
 }
 
 private struct SpectraCameraPreview: UIViewRepresentable {
-    let session: AVCaptureSession
+    let session: AVCaptureSession?
 
     func makeUIView(context: Context) -> UIView {
         let view = CameraPreviewSurface()
         view.previewLayer.videoGravity = .resizeAspectFill
-        view.previewLayer.session = session
+        // Important: never attach a preview layer to a session while
+        // sessionQueue is still inside beginConfiguration/commitConfiguration.
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard let view = uiView as? CameraPreviewSurface else { return }
+        if let session {
+            if view.previewLayer.session !== session {
+                view.previewLayer.session = session
+            }
+        } else if view.previewLayer.session != nil {
+            view.previewLayer.session = nil
+        }
+    }
 }
 
 struct SpectraCameraView: View {
@@ -275,7 +294,7 @@ struct SpectraCameraView: View {
                 .padding(15)
                 .foregroundStyle(.white)
 
-                SpectraCameraPreview(session: camera.session)
+                SpectraCameraPreview(session: camera.ready ? camera.session : nil)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
 
@@ -325,7 +344,10 @@ struct SpectraCameraView: View {
             camera.onCapture = onCapture
             camera.start()
         }
-        .onDisappear { camera.stop() }
+        .onDisappear {
+            camera.stop()
+            camera.onCapture = nil
+        }
         .preferredColorScheme(.dark)
     }
 }
