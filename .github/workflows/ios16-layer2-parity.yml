@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test-macos-shared-models:
@@ -152,22 +152,3 @@ jobs:
           name: SpectraPort-Layer2-v0.14.0-beta.1-Build20-unsigned
           path: ios/build/SpectraPort-iOS16-Layer2-v0.14.0-beta.1-Build20-unsigned.ipa
           if-no-files-found: error
-      - name: Publish separated iOS layer2 prerelease after all checks
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/ios16-desktop-layer2-parity'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          FILE=ios/build/SpectraPort-iOS16-Layer2-v0.14.0-beta.1-Build20-unsigned.ipa
-          TAG=ios16-layer2-v0.14.0-beta.1
-          test -s "$FILE"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FILE" --clobber
-          else
-            gh release create "$TAG" "$FILE" \
-              --target "$GITHUB_SHA" \
-              --title "SpectraPort iOS 16 Layer 2 v0.14.0 beta 1 (Build 20)" \
-              --notes "Standalone unsigned iOS 16 early test beta. Bundle ID com.twogou.SpectraPortParityBeta, installs beside stable Build 19. Default launch: Editor. Original C++20/Metal spectral film engine preserved; adds desktop Mac same-source grade, RGB curves, split-zone color balance and analytic masks (linear, radial, luminance, color). Full-resolution JPEG/PNG shares the Layer2 pipeline, but Layer2 jobs above 6MP are disabled for first device-memory trial. RAW custom camera remains removed. No device crash/performance guarantee; install only if accepting a test build and preserve important photos outside the app. Manually sign this IPA." \
-              --prerelease
-          fi
-          gh release view "$TAG" --json url -q .url
-
