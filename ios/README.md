@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.5.0 / Build 6
+## Current iOS build: v0.6.0 / Build 7
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -33,6 +33,10 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   uses striped engine execution, and outputs sRGB JPEG/PNG directly from
   borrowed RGBA16 storage. The preview UIImage remains on screen.
 - Export stage messages indicate real workflow phases, not fabricated percentages.
+- Saves up to 30 named original film/paper/slider presets in on-device UserDefaults;
+  tracks the six most recently used film-paper pairs locally without cloud storage.
+- Last-export metadata includes output file format and actual byte size. The
+  current editing session can re-share its most recent file without re-rendering.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
