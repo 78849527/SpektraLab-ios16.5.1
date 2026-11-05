@@ -58,10 +58,13 @@ struct FilmSettings: Equatable, Codable {
     let magentaShift: Double
     let yellowShift: Double
     let softness: Double
+    /// Desktop's independent post-print Layer 2 (zero = byte-identical).
+    let adjustments: Adjustments
 
     init(filmStock: String, printStock: String, exposureEV: Double,
          grainAmount: Double, halationAmount: Double, printExposure: Double,
-         magentaShift: Double, yellowShift: Double, softness: Double = 0) {
+         magentaShift: Double, yellowShift: Double, softness: Double = 0,
+         adjustments: Adjustments = .default) {
         self.filmStock = filmStock
         self.printStock = printStock
         self.exposureEV = exposureEV
@@ -71,11 +74,12 @@ struct FilmSettings: Equatable, Codable {
         self.magentaShift = magentaShift
         self.yellowShift = yellowShift
         self.softness = softness
+        self.adjustments = adjustments
     }
 
     private enum CodingKeys: String, CodingKey {
         case filmStock, printStock, exposureEV, grainAmount, halationAmount,
-             printExposure, magentaShift, yellowShift, softness
+             printExposure, magentaShift, yellowShift, softness, adjustments
     }
 
     init(from decoder: Decoder) throws {
@@ -90,6 +94,9 @@ struct FilmSettings: Equatable, Codable {
         yellowShift = try values.decode(Double.self, forKey: .yellowShift)
         // Old presets were written before the softness parameter existed.
         softness = try values.decodeIfPresent(Double.self, forKey: .softness) ?? 0
+        adjustments = try values.decodeIfPresent(
+            Adjustments.self, forKey: .adjustments
+        ) ?? .default
     }
 
     func deltaJSON(striped: Bool = false) throws -> String {
