@@ -331,9 +331,14 @@ export function layer2Tone(c: [number, number, number], u: Layer2Uniforms): [num
 }
 
 function lookup(tables: Float32Array, x: number, row: number): number {
-  // Linear between table entries, clamped — the shader's linear sampler.
+  // Match the ORIGINAL macOS Metal shader's texture2d normalized linear
+  // sampler exactly. For N texels, sample x maps to x*N - 0.5, not
+  // x*(N-1). The older CPU export used the latter and drifted up to
+  // ~0.0045 in output channels when RGB curves were active.
+  // The Windows WebGL texture sampler and original Metal both use texel
+  // centres at (i+0.5)/N; keep all three in agreement.
   const n = CURVE_TABLE_SIZE;
-  const f = sat(x) * (n - 1);
+  const f = clamp(sat(x) * n - 0.5, 0, n - 1);
   const i = Math.floor(f);
   const j = Math.min(i + 1, n - 1);
   const t = f - i;
