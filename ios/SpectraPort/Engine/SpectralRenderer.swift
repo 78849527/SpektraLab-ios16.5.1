@@ -247,6 +247,10 @@ final class SpectralRenderer {
                 throw PortError.message("引擎没有应用：" + key)
             }
         }
+        guard let active = (resolved["halation_active"] as? NSNumber)?.boolValue,
+              active == (settings.halationAmount > 0) else {
+            throw PortError.message("光晕开关没有同步到原版引擎")
+        }
         let numeric: [String: Double] = [
             "exposure_compensation_ev": settings.exposureEV,
             "grain_amount": settings.grainAmount,
