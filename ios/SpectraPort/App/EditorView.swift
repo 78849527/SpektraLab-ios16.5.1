@@ -431,6 +431,21 @@ struct EditorView: View {
     @State private var selectedTab: EditorTab = .adjust
     @State private var adjustmentGroup: AdjustmentGroup = .camera
     @State private var gradeSubsection: GradeSubsection = .basic
+    @State private var selectedMaskID: UUID?
+
+    /// The UIKit photo loupe and SwiftUI handles share one exact aspect-fit
+    /// coordinate system while local geometry is being manipulated.
+    private var editingMaskOnPhoto: Bool {
+        selectedTab == .grade && gradeSubsection == .local &&
+        model.processed != nil && !model.compare && !showPreviousFilm
+    }
+
+    private func enterMaskEditingIfNeeded() {
+        guard selectedTab == .grade && gradeSubsection == .local else { return }
+        // Never show a stale high-resolution frame after the sliders change.
+        clearInlineHighResolution()
+        fitWholePhoto()
+    }
 
     private var filteredFilms: [FilmCatalog.Stock] {
         FilmCatalog.films.filter { filmFilter.accepts($0) }
@@ -703,6 +718,7 @@ struct EditorView: View {
                         resetToken: zoomResetToken,
                         zoomCommand: zoomCommand,
                         zoomDirection: zoomDirection,
+                        maskEditing: editingMaskOnPhoto,
                         onNeedsHighResolution: { inspectFullResolution() }
                     )
                     .frame(width: frame.size.width, height: frame.size.height)
@@ -710,6 +726,18 @@ struct EditorView: View {
                     // reliable even when its zoom/inset state is inconsistent
                     // after live Core Image/Metal parameter updates.
                     .id("source-\(model.photoSelectionVersion)-fit-\(zoomResetToken)")
+
+                    // Draw the active desktop-model gradient/ellipse directly
+                    // on the fitted image. Background loupe is locked to
+                    // aspect-fit while local geometry is edited.
+                    if editingMaskOnPhoto, let current = model.processed {
+                        InlineMaskOverlay(
+                            masks: $model.masks,
+                            selectedID: $selectedMaskID,
+                            imageSize: current.size
+                        )
+                        .frame(width: frame.size.width, height: frame.size.height)
+                    }
                 }
             } else {
                 VStack(spacing: 13) {
@@ -1568,8 +1596,7 @@ struct EditorView: View {
                 } else {
                     MobileLocalMaskEditor(
                         masks: $model.masks,
-                        imageAspectRatio: CGFloat(model.processed?.size.width ?? 1) /
-                            max(1, CGFloat(model.processed?.size.height ?? 1))
+                        selectedID: $selectedMaskID
                     )
                 }
             }
@@ -1660,12 +1687,24 @@ struct EditorView: View {
             .onChange(of: model.photoSelectionVersion) { _ in
                 clearInlineHighResolution()
                 fitWholePhoto()
+                selectedMaskID = nil
                 photoSaveFeedback = ""
             }
             .onChange(of: model.previewSequence) { _ in
                 showPreviousFilm = false
                 clearInlineHighResolution()
-                fitWholePhoto()
+                // Live masks can re-render every 240 ms. Rebuilding the
+                // UIScrollView during a handle drag interrupts the gesture.
+                if !editingMaskOnPhoto { fitWholePhoto() }
+            }
+            .onChange(of: selectedTab) { _ in
+                enterMaskEditingIfNeeded()
+            }
+            .onChange(of: gradeSubsection) { _ in
+                enterMaskEditingIfNeeded()
+            }
+            .onChange(of: model.compare) { isComparing in
+                if !isComparing { enterMaskEditingIfNeeded() }
             }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
