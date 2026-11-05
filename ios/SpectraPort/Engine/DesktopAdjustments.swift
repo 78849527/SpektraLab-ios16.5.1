@@ -1,5 +1,5 @@
-// Exact original Adjustments.swift from macOS, plus the shared
-// Layer2Uniforms.tone() body extracted unchanged from Model/Mask.swift.
+// Unmodified macOS Adjustments.swift. The shared Layer2Uniforms.tone()
+// implementation now comes from the unmodified desktop Mask.swift.
 //  Adjustments.swift — Layer 2: adjustments to the print output, client-side.
 //
 //  These operate on the encoded print output the way a scan of a print is
@@ -136,35 +136,4 @@ struct Layer2Uniforms: Sendable {
     /// which is what Display P3 has and what this code pivoted on by accident
     /// until RFC-018.
     static let srgbMidGrey: Float = 0.4614
-}
-
-extension Layer2Uniforms {
-    /// The Layer 2 tone block, built once and used by both the global
-    /// adjustments and every mask. Two copies of these formulas is two
-    /// chances for "+1 stop" to mean two different things depending on where
-    /// the slider was.
-    static func tone(temperature: Double, tint: Double, exposure: Double, contrast: Double,
-                     brightness: Double, saturation: Double, highlights: Double, shadows: Double,
-                     blackPoint: Double, whitePoint: Double) -> Layer2Uniforms {
-        var u = Layer2Uniforms()
-        u.enabled = 1
-        let t = Float(temperature) / 100, g = Float(tint) / 100
-        u.wbGain = SIMD3<Float>(1 + 0.18 * t, 1 - 0.12 * g, 1 - 0.18 * t)
-        u.exposureGain = Float(pow(2.0, exposure))
-        u.contrast = Float(contrast) / 100
-        u.brightness = Float(brightness) / 100
-        u.saturation = 1 + Float(saturation) / 100
-        u.highlights = Float(highlights) / 100
-        u.shadows = Float(shadows) / 100
-        u.blackPoint = Float(blackPoint) / 100
-        u.whitePoint = Float(whitePoint) / 100
-        // The tone pivot (RFC-018 D1). Set here rather than at each call site
-        // because this is the one function both the global adjustments and
-        // every mask go through: a mask whose shadows/highlights split sat
-        // somewhere else from the global panel's would be "+1 stop" meaning two
-        // things depending on where the slider was, which is the whole reason
-        // this function is shared.
-        u.midGrey = Layer2Uniforms.proPhotoMidGrey
-        return u
-    }
 }
