@@ -430,6 +430,7 @@ struct EditorView: View {
     @State private var presetsExpanded = false
     @State private var exportExpanded = false
     @State private var selectedTab: EditorTab = .adjust
+    @State private var activeSliderReadout: String?
     @State private var adjustmentGroup: AdjustmentGroup = .camera
     @State private var gradeSubsection: GradeSubsection = .basic
     @State private var selectedMaskID: UUID?
@@ -1403,7 +1404,7 @@ struct EditorView: View {
 
     private var quickAdjustmentPanel: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text("实时光谱调节")
                         .font(.system(size: 13, weight: .semibold))
@@ -1428,7 +1429,7 @@ struct EditorView: View {
                 }
                 .pickerStyle(.segmented)
 
-                VStack(spacing: 3) {
+                VStack(spacing: 0) {
                     if adjustmentGroup == .camera {
                         DarkroomControlRow(
                             label: "曝光补偿", value: $model.exposureEV,
@@ -1505,7 +1506,7 @@ struct EditorView: View {
     /// are post-print controls, not substitutes for film exposure/grain.
     private var desktopGradePanel: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text("桌面同源 · 调色")
                         .font(.system(size: 13, weight: .semibold))
@@ -1622,7 +1623,19 @@ struct EditorView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     previewSection
-                        .frame(height: max(220, geometry.size.height * 0.55))
+                        .frame(height: max(220, geometry.size.height * 0.51))
+                        .overlay(alignment: .top) {
+                            if let activeSliderReadout {
+                                Text(activeSliderReadout)
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(DarkroomStyle.primary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(.black.opacity(0.78), in: Capsule())
+                                    .padding(.top, 16)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                         .padding(.horizontal, 10)
                         .padding(.top, 6)
                         .padding(.bottom, 2)
@@ -1639,14 +1652,15 @@ struct EditorView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(DarkroomStyle.background)
+                    .onPreferenceChange(CompactSliderReadoutKey.self) { readout in
+                        activeSliderReadout = readout
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(DarkroomStyle.background.ignoresSafeArea())
-            .navigationTitle("SpectraPort")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(DarkroomStyle.background, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            // Keep iOS status bar; remove the entire empty navigation bar.
+            .toolbar(.hidden, for: .navigationBar)
             .onChange(of: selectedPhoto) {
                 clearInlineHighResolution()
                 photoSaveFeedback = ""

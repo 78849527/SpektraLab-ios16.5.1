@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Local visual system only. Keeps the original engine and image colour
 /// management separate from the editor's neutral dark chrome.
@@ -21,7 +22,7 @@ struct DarkroomPanel<Content: View>: View {
 
     var body: some View {
         content
-            .padding(11)
+            .padding(9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(
@@ -171,6 +172,7 @@ struct DarkroomControlRow: View {
 
     @State private var showingPrecision = false
     @State private var precisionText = ""
+    @State private var isDragging = false
 
     private var decimals: Int {
         if step < 0.01 { return 3 }
@@ -275,11 +277,13 @@ struct DarkroomControlRow: View {
                 .frame(width: 77, alignment: .leading)
                 .accessibilityAddTraits(.isStaticText)
 
-            Slider(value: $value, in: range, step: step)
-                .tint(DarkroomStyle.accent)
-                .frame(minHeight: 44)
-                .accessibilityLabel(label)
-                .disabled(disabled)
+            CompactFineSlider(
+                value: $value, range: range, step: step,
+                disabled: disabled, label: label,
+                onTrackingChange: { isDragging = $0 }
+            )
+            .frame(height: 44)
+            .accessibilityLabel(label)
 
             Button {
                 precisionText = formatted(value)
@@ -300,8 +304,121 @@ struct DarkroomControlRow: View {
             .accessibilityValue(formatted(value) + suffix)
         }
         .frame(minHeight: 44)
+        .preference(
+            key: CompactSliderReadoutKey.self,
+            value: isDragging ? label + "  " + formatted(value) + suffix : nil
+        )
         .sheet(isPresented: $showingPrecision) {
             precisionPanel
         }
     }
 }
+
+
+/// A precise UISlider whose visual track is 2pt and thumb is 10pt (12pt on
+/// touch). UIKit retains its native gesture interaction within ScrollView.
+private struct CompactFineSlider: UIViewRepresentable {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let disabled: Bool
+    let label: String
+    let onTrackingChange: (Bool) -> Void
+
+    private static func trackImage(_ color: UIColor) -> UIImage {
+        let width: CGFloat = 12
+        let height: CGFloat = 2
+        let image = UIGraphicsImageRenderer(size: CGSize(width: width, height: height)).image { _ in
+            color.setFill()
+            UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: width, height: height),
+                         cornerRadius: height / 2).fill()
+        }
+        return image.resizableImage(
+            withCapInsets: UIEdgeInsets(top: 0, left: 5, bottom: 0, right: 5),
+            resizingMode: .stretch
+        )
+    }
+
+    private static func thumbImage(diameter: CGFloat) -> UIImage {
+        let canvas = CGSize(width: 14, height: 14)
+        return UIGraphicsImageRenderer(size: canvas).image { _ in
+            let rect = CGRect(x: (canvas.width - diameter) / 2,
+                              y: (canvas.height - diameter) / 2,
+                              width: diameter, height: diameter)
+            UIColor(red: 0.95, green: 0.93, blue: 0.88, alpha: 1).setFill()
+            UIBezierPath(ovalIn: rect).fill()
+            UIColor(red: 0.62, green: 0.49, blue: 0.33, alpha: 0.9).setStroke()
+            let edge = UIBezierPath(ovalIn: rect.insetBy(dx: 0.45, dy: 0.45))
+            edge.lineWidth = 0.8
+            edge.stroke()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UISlider {
+        let slider = UISlider(frame: .zero)
+        slider.minimumTrackTintColor = .clear
+        slider.maximumTrackTintColor = .clear
+        slider.setMinimumTrackImage(Self.trackImage(
+            UIColor(red: 0.91, green: 0.74, blue: 0.48, alpha: 1)), for: .normal)
+        slider.setMaximumTrackImage(Self.trackImage(
+            UIColor(white: 0.54, alpha: 0.64)), for: .normal)
+        slider.setThumbImage(Self.thumbImage(diameter: 10), for: .normal)
+        slider.setThumbImage(Self.thumbImage(diameter: 12), for: .highlighted)
+        slider.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)),
+                         for: .valueChanged)
+        slider.addTarget(context.coordinator, action: #selector(Coordinator.started(_:)),
+                         for: .touchDown)
+        slider.addTarget(context.coordinator, action: #selector(Coordinator.ended(_:)),
+                         for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        return slider
+    }
+
+    func updateUIView(_ slider: UISlider, context: Context) {
+        context.coordinator.owner = self
+        slider.minimumValue = Float(range.lowerBound)
+        slider.maximumValue = Float(range.upperBound)
+        slider.isEnabled = !disabled
+        // Keep the native thumb in contact with the finger while dragging.
+        if !slider.isTracking {
+            slider.setValue(Float(min(range.upperBound, max(range.lowerBound, value))),
+                            animated: false)
+        }
+        slider.accessibilityLabel = label
+        slider.accessibilityValue = String(format: "%.2f", value)
+    }
+
+    final class Coordinator: NSObject {
+        var owner: CompactFineSlider
+        init(_ owner: CompactFineSlider) { self.owner = owner }
+
+        @objc func started(_ slider: UISlider) {
+            owner.onTrackingChange(true)
+        }
+
+        @objc func changed(_ slider: UISlider) {
+            let raw = Double(slider.value)
+            let steps = ((raw - owner.range.lowerBound) / owner.step).rounded()
+            let snapped = min(owner.range.upperBound,
+                              max(owner.range.lowerBound,
+                                  owner.range.lowerBound + steps * owner.step))
+            if owner.value != snapped { owner.value = snapped }
+        }
+
+        @objc func ended(_ slider: UISlider) {
+            changed(slider)
+            owner.onTrackingChange(false)
+        }
+    }
+}
+
+/// The active slider's HUD is forwarded from the bottom adjustment panel to
+/// the photo preview, without coupling it to the original rendering engine.
+struct CompactSliderReadoutKey: PreferenceKey {
+    static let defaultValue: String? = nil
+    static func reduce(value: inout String?, nextValue: () -> String?) {
+        if let next = nextValue() { value = next }
+    }
+}
+

@@ -54,7 +54,7 @@ struct MobileLocalMaskEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text("局部蒙版")
                     .font(.system(size: 13, weight: .semibold))
@@ -185,7 +185,7 @@ struct MobileLocalMaskEditor: View {
                         .font(.system(size: 11))
                         .buttonStyle(.bordered)
                     } else if section == .light {
-                        VStack(spacing: 3) {
+                        VStack(spacing: 0) {
                             DarkroomControlRow(
                                 label: "局部曝光", value: $masks[i].adjustments.exposure,
                                 range: -3...3, step: 0.1, suffix: " EV", disabled: false
@@ -204,7 +204,7 @@ struct MobileLocalMaskEditor: View {
                             )
                         }
                     } else {
-                        VStack(spacing: 3) {
+                        VStack(spacing: 0) {
                             DarkroomControlRow(
                                 label: "局部色温", value: $masks[i].adjustments.temperature,
                                 range: -100...100, step: 1, suffix: "", disabled: false
