@@ -46,7 +46,7 @@ enum FullSizeExporter {
 
     /// Decode only after a metadata preflight, so a 48/100 MP source isn't
     /// accidentally decompressed at full resolution on a 4 GB iPhone.
-    static func decode(_ data: Data, limit: ExportLimit) throws -> DecodedFrame {
+    static func decode(_ data: Data, limit: ExportLimit, softness: Double = 0) throws -> DecodedFrame {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
@@ -98,7 +98,9 @@ enum FullSizeExporter {
         // We allocate only the bounded 32-bit input. The film engine copies
         // this to its own Metal source, so the caller drops it immediately
         // after spk_open has returned.
-        let ci = CIImage(cgImage: picture)
+        let ci = InputSoftening.apply(
+            CIImage(cgImage: picture), amount: softness
+        )
         let context = CIContext(options: [.cacheIntermediates: false])
         var buffer = [Float](repeating: 0, count: outW * outH * 4)
         try buffer.withUnsafeMutableBytes { bytes in

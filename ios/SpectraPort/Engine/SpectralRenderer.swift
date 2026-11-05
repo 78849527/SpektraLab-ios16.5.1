@@ -96,7 +96,9 @@ final class SpectralRenderer {
         defer { resetNativeState() }
 
         report("检查尺寸并解码原始照片…")
-        var frame = try FullSizeExporter.decode(data, limit: limit)
+        var frame = try FullSizeExporter.decode(
+            data, limit: limit, softness: settings.softness
+        )
         report("初始化高清光谱会话…")
         let native = try ensureEngine()
         var openReply: UnsafeMutablePointer<CChar>?
@@ -186,7 +188,9 @@ final class SpectralRenderer {
 
         let width = thumbnail.width
         let height = thumbnail.height
-        let input = CIImage(cgImage: thumbnail)
+        let input = InputSoftening.apply(
+            CIImage(cgImage: thumbnail), amount: settings.softness
+        )
         var floats = [Float](repeating: 0, count: width * height * 4)
         try floats.withUnsafeMutableBytes { bytes in
             guard let base = bytes.baseAddress else {
@@ -271,7 +275,8 @@ final class SpectralRenderer {
     private func renderSynchronously(_ data: Data, photoID: UUID,
                                      settings: FilmSettings) throws -> RenderedPhoto {
         let engine = try ensureEngine()
-        if cachedPhotoID != photoID || session == nil {
+        if cachedPhotoID != photoID || session == nil ||
+            appliedSettings?.softness != settings.softness {
             try openPhoto(data, photoID: photoID, settings: settings, engine: engine)
         } else if let previous = appliedSettings, previous != settings {
             // A print-only change reuses the existing film negative.
