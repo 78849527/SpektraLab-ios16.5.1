@@ -365,9 +365,10 @@ private enum EditorTab: String, CaseIterable {
 }
 
 private enum GradeSubsection: String, CaseIterable {
-    case basic = "基础调色"
-    case curves = "RGB 曲线"
-    case local = "局部蒙版"
+    case basic = "基础"
+    case curves = "曲线"
+    case balance = "色彩平衡"
+    case local = "局部"
 }
 
 private enum AdjustmentGroup: String, CaseIterable {
@@ -1545,6 +1546,8 @@ struct EditorView: View {
                 )
                 } else if gradeSubsection == .curves {
                     MobileCurveEditor(curves: $model.grade.curves)
+                } else if gradeSubsection == .balance {
+                    MobileColorBalanceEditor(colorBalance: $model.grade.colorBalance)
                 } else {
                     MobileLocalMaskEditor(masks: $model.masks)
                 }
