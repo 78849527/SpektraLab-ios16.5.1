@@ -831,7 +831,8 @@ struct EditorView: View {
                     } label: {
                         Image(systemName: "sparkle.magnifyingglass")
                     }
-                    .disabled(!canExport || inlineHighResolutionURL != nil)
+                    .disabled(!canExport || inlineHighResolutionURL != nil ||
+                              editingMaskOnPhoto)
                     .accessibilityLabel("载入高清细节")
                 }
                 .font(.system(size: 11, weight: .medium))
@@ -868,7 +869,8 @@ struct EditorView: View {
                     .frame(width: 40)
                     .padding(.vertical, 10)
                     .background(.black.opacity(0.70), in: Capsule())
-                    .disabled(model.processed == nil)
+                    .disabled(model.processed == nil || editingMaskOnPhoto)
+                    .opacity(editingMaskOnPhoto ? 0.30 : 1)
                 }
                 Spacer()
                     .frame(height: 49)
@@ -1705,6 +1707,9 @@ struct EditorView: View {
             }
             .onChange(of: model.compare) { isComparing in
                 if !isComparing { enterMaskEditingIfNeeded() }
+            }
+            .onChange(of: showPreviousFilm) { showingPrevious in
+                if !showingPrevious { enterMaskEditingIfNeeded() }
             }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
