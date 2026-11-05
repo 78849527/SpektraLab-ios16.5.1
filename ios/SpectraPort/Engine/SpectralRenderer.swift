@@ -211,15 +211,18 @@ final class SpectralRenderer {
                 throw PortError.message("无法获取 Layer 2 原始印相像素")
             }
             report("应用 macOS 同源 Layer 2 调色与曲线…")
-            let graded = try gradeProcessor().apply(
+            // Full-size Layer 2 now encodes from the original Metal output
+            // texture: no additional whole-frame RGBA16 CPU readback buffer.
+            // Preview intentionally keeps its existing CGImage path.
+            url = try gradeProcessor().export(
                 raw: raw,
                 width: Int(output.width),
                 height: Int(output.height),
                 rowStridePixels: Int(output.row_stride_px),
                 adjustments: settings.adjustments,
-                masks: settings.masks
+                masks: settings.masks,
+                jpeg: format == .jpeg
             )
-            url = try FullSizeExporter.write(graded, format: format)
         } else {
             // Identical to the original port when Layer 2 is neutral.
             url = try FullSizeExporter.write(output, format: format)
