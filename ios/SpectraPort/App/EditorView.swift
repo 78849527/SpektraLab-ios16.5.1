@@ -36,6 +36,7 @@ final class EditorModel: ObservableObject {
     @Published var magentaShift = 0.0
     @Published var yellowShift = 0.0
     @Published var softness = 0.0
+    @Published var grade = Adjustments.default
 
     private var sourceData: Data?
     private var photoID = UUID()
@@ -63,6 +64,7 @@ final class EditorModel: ObservableObject {
         magentaShift = settings.magentaShift
         yellowShift = settings.yellowShift
         softness = settings.softness
+        grade = settings.adjustments
         markDirty()
         status = hasPhoto ? "已载入参数，点击「应用设置」渲染" : "预设已载入，选择照片后应用"
     }
@@ -199,7 +201,8 @@ final class EditorModel: ObservableObject {
             exposureEV: exposureEV, grainAmount: grainAmount,
             halationAmount: halationAmount, printExposure: printExposure,
             magentaShift: magentaShift, yellowShift: yellowShift,
-            softness: softness
+            softness: softness,
+            adjustments: grade
         )
     }
 
@@ -342,6 +345,7 @@ private enum EditorTab: String, CaseIterable {
     case film = "胶片"
     case paper = "相纸"
     case adjust = "调节"
+    case grade = "调色"
     case presets = "预设"
     case export = "导出"
 
@@ -350,6 +354,7 @@ private enum EditorTab: String, CaseIterable {
         case .film: return "film"
         case .paper: return "square.stack.3d.up"
         case .adjust: return "slider.horizontal.3"
+        case .grade: return "circle.lefthalf.filled"
         case .presets: return "bookmark"
         case .export: return "square.and.arrow.up"
         }
@@ -511,6 +516,9 @@ struct EditorView: View {
         Print exposure: \(String(format: "%.2f", model.printExposure))
         Magenta shift: \(String(format: "%.2f", model.magentaShift))
         Yellow shift: \(String(format: "%.2f", model.yellowShift))
+        Mac Layer2 global grade: \(model.grade.isNeutral ? "neutral" : "active")
+        Mac Layer2 curves: \(model.grade.curves.isIdentity ? "identity" : "custom")
+        Mac Layer2 GPU kernel: original macOS Shaders.metal::layer2
         Input digital softness: \(String(format: "%.2f", model.softness))
         Softness stage: Core Image pre-film (independent of original C++ engine)
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")
@@ -1260,7 +1268,7 @@ struct EditorView: View {
 
     private var editorSections: some View {
         HStack(spacing: 4) {
-            ForEach([EditorTab.film, .paper, .adjust, .presets], id: \.self) { tab in
+            ForEach([EditorTab.film, .paper, .adjust, .grade, .presets], id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         selectedTab = tab
@@ -1307,7 +1315,8 @@ struct EditorView: View {
                 selectedTab = .adjust
             } label: {
                 navigationIcon("编辑", symbol: "slider.horizontal.3", selected:
-                    selectedTab == .adjust || selectedTab == .film || selectedTab == .paper)
+                    selectedTab == .adjust || selectedTab == .grade ||
+                    selectedTab == .film || selectedTab == .paper)
             }
 
             Button {
@@ -1433,12 +1442,98 @@ struct EditorView: View {
         }
     }
 
+    /// The actual macOS Layer 2 adjustment model and GPU kernel. These
+    /// are post-print controls, not substitutes for film exposure/grain.
+    private var desktopGradePanel: some View {
+        DarkroomPanel {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack {
+                    Text("桌面同源 · 扫描后调色")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(DarkroomStyle.primary)
+                    Spacer()
+                    Button("全部复位") {
+                        model.grade = .default
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DarkroomStyle.accent)
+                }
+                Text("光谱胶片冲印后运行 macOS 原版 Metal Layer 2。预览和高清导出共用相同参数。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
+
+                DarkroomControlRow(
+                    label: "扫描后曝光", value: $model.grade.exposure,
+                    range: -3...3, step: 0.1, suffix: " EV",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "扫描色温", value: $model.grade.temperature,
+                    range: -100...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "扫描色调", value: $model.grade.tint,
+                    range: -100...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "对比度", value: $model.grade.contrast,
+                    range: -50...50, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "亮度", value: $model.grade.brightness,
+                    range: -50...50, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "饱和度", value: $model.grade.saturation,
+                    range: -100...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "高光", value: $model.grade.highlights,
+                    range: -100...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "阴影", value: $model.grade.shadows,
+                    range: -100...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "黑场", value: $model.grade.blackPoint,
+                    range: 0...50, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "白场", value: $model.grade.whitePoint,
+                    range: 0...50, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "暗角", value: $model.grade.vignette.amount,
+                    range: -100...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                DarkroomControlRow(
+                    label: "暗角中心范围", value: $model.grade.vignette.midpoint,
+                    range: 0...100, step: 1, suffix: "",
+                    disabled: model.isBusy
+                )
+                MobileCurveEditor(curves: $model.grade.curves)
+            }
+        }
+    }
+
     @ViewBuilder
     private var activePanel: some View {
         switch selectedTab {
         case .film: filmSection
         case .paper: paperSection
         case .adjust: quickAdjustmentPanel
+        case .grade: desktopGradePanel
         case .presets:
             presetsSection
                 .onAppear { presetsExpanded = true }
@@ -1531,6 +1626,7 @@ struct EditorView: View {
             .onChange(of: model.magentaShift) { _ in model.markDirty() }
             .onChange(of: model.yellowShift) { _ in model.markDirty() }
             .onChange(of: model.softness) { _ in model.markDirty() }
+            .onChange(of: model.grade) { _ in model.markDirty() }
             .onAppear {
                 model.onSuccessfulRender = { [weak presetStore] settings in
                     presetStore?.recordUse(settings)
