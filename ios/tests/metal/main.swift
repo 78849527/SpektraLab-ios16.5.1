@@ -172,3 +172,31 @@ check(abs(channel(paddedImage, 4, 4, 0) - Double(32768)/65535) < 1e-5,
       "native 16-bit padded row input bypass preserves source pixels")
 
 print("METAL_GPU_FIXTURES_PASS: neutral, exposure, red curve, radial, linear, luminance, colour range, colour balance, vignette, inverse mask, padded rows")
+
+// Real original-kernel pixel path at the two supported camera-size tiers.
+// The runner is not the iPhone's thermal/memory environment; success is
+// desktop GPU throughput/memory evidence, NOT iPhone validation.
+func largeFrameFixture(_ w: Int, _ h: Int, processor: DesktopLayer2Processor) throws {
+    // Manufacture a full 16-bit encoded ProPhoto print, including opaque alpha.
+    // Avoid retaining the caller's pixels beyond the current fixture.
+    var buffer = [UInt16](repeating: 32768, count: w * h * 4)
+    for p in 0..<(w * h) { buffer[p * 4 + 3] = 65535 }
+    var grade = Adjustments.default
+    grade.exposure = 0.35
+    let start = ProcessInfo.processInfo.systemUptime
+    let picture = try buffer.withUnsafeBufferPointer { pixels in
+        try processor.apply(
+            raw: pixels.baseAddress!, width: w, height: h,
+            rowStridePixels: w, adjustments: grade)
+    }
+    let millis = (ProcessInfo.processInfo.systemUptime - start) * 1000
+    check(picture.width == w && picture.height == h,
+          "full-tier graded dimensions \(w)x\(h)")
+    check(picture.bytesPerRow == w * 8, "full-tier 16-bit output stride")
+    check(channel(picture, w/2, h/2, 0) > 0.54,
+          "full-tier GPU grade changes centre pixel")
+    print("LARGE_METAL_FRAME_PASS: \(w)x\(h) · \(Int(millis)) ms GPU+readback")
+}
+try largeFrameFixture(2000, 3000, processor: processor)
+try largeFrameFixture(3024, 4032, processor: processor)
+
