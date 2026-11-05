@@ -80,14 +80,17 @@ struct InlineMaskOverlay: View {
             .overlay {
                 Circle().fill(tint).frame(width: 6, height: 6)
             }
+            // Keep hit testing on the 28-pt circle only. Applying .gesture
+            // *after* .position would give the gesture the entire photo's
+            // proposed layout size, stealing drags from the other handles.
             .contentShape(Circle())
-            .position(point)
             .accessibilityLabel(label)
             .gesture(
                 DragGesture(minimumDistance: 0,
                             coordinateSpace: .named("mask-photo-overlay"))
                     .onChanged { event in onDrag(event.location) }
             )
+            .position(point)
     }
 
     private func draw(_ shape: MaskComponent, in rect: CGRect,
@@ -151,7 +154,6 @@ struct InlineMaskOverlay: View {
                             .contentShape(Rectangle())
                             .rotationEffect(Angle(radians:
                                 Double(atan2(b.y - a.y, b.x - a.x))))
-                            .position(midpoint)
                             .accessibilityLabel("拖动线性渐变位置")
                             .gesture(
                                 DragGesture(minimumDistance: 0)
@@ -163,6 +165,7 @@ struct InlineMaskOverlay: View {
                                         lineDragStartB = nil
                                     }
                             )
+                            .position(midpoint)
 
                         handle("线性渐变起点", at: a,
                                tint: DarkroomStyle.accent) { point in
