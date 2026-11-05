@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.7.0 / Build 8
+## Current iOS build: v0.8.0 / Build 9
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -42,6 +42,15 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   sections, precise slider +/- controls, and persistent bottom Apply action.
 - The original C++20 and Metal spectral code, session cache, preset storage,
   export file sharing, and 6MP/12.5MP full-tier flow are unchanged.
+- v0.8.0: editor has always-visible top navigation tabs for Film / Paper /
+  Adjust / Presets / Export, eliminating long vertical page scrolling.
+  The Adjust tab keeps the image visible above focused Shoot/Print controls.
+- Real engine-computed live preview uses 240 ms debounce and a single in-flight
+  session render. Never queues intermediate slider values: the latest values
+  win, stale renders do not replace the preview. Manual immediate refresh and
+  a realtime on/off switch remain available.
+- Not a 60fps shader overlay: normal ~200-300 ms original GPU film render is
+  performed after a gesture pauses, with the original negative caching.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
