@@ -69,30 +69,37 @@ jobs:
             ios/tests/mask-preview/main.swift \
             -o /tmp/spectraport-mask-preview-geometry
           /tmp/spectraport-mask-preview-geometry | grep -q MASK_PHOTO_GEOMETRY_PASS
-      - name: Verify only preview UI changed (native export logic remains original)
-        run: |
-          grep -Fq 'InlineMaskOverlay(' ios/SpectraPort/App/EditorView.swift
-          grep -Fq 'maskEditing: editingMaskOnPhoto' ios/SpectraPort/App/EditorView.swift
-          grep -Fq 'uiView.pinchGestureRecognizer?.isEnabled = !maskEditing' ios/SpectraPort/App/InlineZoomPreview.swift
-          grep -Fq 'url = try FullSizeExporter.write(graded, format: format)' ios/SpectraPort/Engine/SpectralRenderer.swift
-      - name: Regression gate for local-preview unexpected zoom
+      - name: Verify fixed local mask canvas is independent from the loupe
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          view = Path("ios/SpectraPort/App/DetailInspectionView.swift").read_text()
-          bridge = Path("ios/SpectraPort/App/InlineZoomPreview.swift").read_text()
           editor = Path("ios/SpectraPort/App/EditorView.swift").read_text()
-          assert "var locksZoomToFit = false" in view
-          assert "abs(zoomScale - fit) >" in view
-          assert "if lockToFit {" in bridge
-          assert "scroll.resetToFit()" in bridge
-          assert "lockToFit: maskEditing" in bridge
-          assert "uiView.locksZoomToFit = maskEditing" in bridge
-          assert "if scroll.locksZoomToFit {" in bridge
-          assert "if zoomCommand > 0 && !maskEditing {" in bridge
+          canvas = Path("ios/SpectraPort/App/LocalMaskCanvas.swift").read_text()
+          overlay = Path("ios/SpectraPort/App/InlineMaskOverlay.swift").read_text()
+          zoom = Path("ios/SpectraPort/App/InlineZoomPreview.swift").read_text()
+          export = Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
+          # Local masking is a separate rendering branch, not an active
+          # UIScrollView trying to reset to aspect-fit on every preview.
+          assert "if editingMaskOnPhoto {\n                        // Local masks" in editor
+          assert "LocalMaskCanvas(" in editor
+          assert "} else {\n                        // Keep the existing loupe" in editor
+          assert "maskEditing: false" in editor
           assert "if !editingMaskOnPhoto { fitWholePhoto() }" in editor
-          assert "url = try FullSizeExporter.write(graded, format: format)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
-          print("LOCAL_PREVIEW_FIT_LOCK_CONTRACT_PASS")
+          assert "InlineMaskOverlay(" not in editor
+          assert ".id(\"source-" in editor
+          assert canvas.count("MaskPhotoGeometry.fittedRect(") == 1
+          assert "Image(uiImage: image)" in canvas
+          assert "photoRect: photoRect" in canvas
+          assert "UIScrollView" not in canvas or "no UIScrollView" in canvas
+          assert ".scaleEffect(" not in canvas
+          assert "let photoRect: CGRect" in overlay
+          assert "MaskPhotoGeometry.fittedRect(" not in overlay
+          assert 'coordinateSpace: .named("mask-photo-overlay")' in overlay
+          # Ordinary edit loupe still supports pinch, and original export
+          # remains byte-for-byte untouched by this UI-only migration.
+          assert "func scrollViewDidZoom" in zoom
+          assert "url = try FullSizeExporter.write(graded, format: format)" in export
+          print("FIXED_LOCAL_MASK_CANVAS_CONTRACT_PASS")
           PY
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
@@ -135,15 +142,15 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta23"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "23"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta24"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "24"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta23'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '23'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta24'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '24'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版23'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版24'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -158,13 +165,13 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-FixedCanvas-v0.14.4-beta.5-Build24-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-FixedCanvas-v0.14.4-beta.5-Build24-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-MaskFit-v0.14.3-beta.4-Build23-unsigned
-          path: ios/build/SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa
+          name: SpectraPort-FixedCanvas-v0.14.4-beta.5-Build24-unsigned
+          path: ios/build/SpectraPort-iOS16-FixedCanvas-v0.14.4-beta.5-Build24-unsigned.ipa
           if-no-files-found: error
       # Post-package parity checks: preserve a distributable unsigned IPA even
       # if host-specific Metal numeric fixtures report an Intel GPU mismatch.

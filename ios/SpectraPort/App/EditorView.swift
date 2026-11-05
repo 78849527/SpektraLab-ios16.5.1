@@ -712,33 +712,29 @@ struct EditorView: View {
                 ? model.original
                 : (showPreviousFilm ? model.previousProcessed : model.processed) {
                 GeometryReader { frame in
-                    ZStack(alignment: .topLeading) {
-                    InlineZoomPreview(
-                        preview: image,
-                        highResolutionURL: inlineHighResolutionURL,
-                        resetToken: zoomResetToken,
-                        zoomCommand: zoomCommand,
-                        zoomDirection: zoomDirection,
-                        maskEditing: editingMaskOnPhoto,
-                        onNeedsHighResolution: { inspectFullResolution() }
-                    )
-                    .frame(width: frame.size.width, height: frame.size.height)
-                    // Rebuild the native UIScrollView on reset. This remains
-                    // reliable even when its zoom/inset state is inconsistent
-                    // after live Core Image/Metal parameter updates.
-                    .id("source-\(model.photoSelectionVersion)-fit-\(zoomResetToken)")
-
-                    // Draw the active desktop-model gradient/ellipse directly
-                    // on the fitted image. Background loupe is locked to
-                    // aspect-fit while local geometry is edited.
-                    if editingMaskOnPhoto, let current = model.processed {
-                        InlineMaskOverlay(
+                    if editingMaskOnPhoto {
+                        // Local masks use a dedicated, fixed aspect-fit canvas:
+                        // no UIScrollView, zoom restoration, or changing image
+                        // intrinsic size may change the photo/handle transform.
+                        LocalMaskCanvas(
+                            image: image,
                             masks: $model.masks,
-                            selectedID: $selectedMaskID,
-                            imageSize: current.size
+                            selectedID: $selectedMaskID
                         )
                         .frame(width: frame.size.width, height: frame.size.height)
-                    }
+                    } else {
+                        // Keep the existing loupe for ordinary inspection.
+                        InlineZoomPreview(
+                            preview: image,
+                            highResolutionURL: inlineHighResolutionURL,
+                            resetToken: zoomResetToken,
+                            zoomCommand: zoomCommand,
+                            zoomDirection: zoomDirection,
+                            maskEditing: false,
+                            onNeedsHighResolution: { inspectFullResolution() }
+                        )
+                        .frame(width: frame.size.width, height: frame.size.height)
+                        .id("source-\(model.photoSelectionVersion)-fit-\(zoomResetToken)")
                     }
                 }
             } else {
@@ -1697,8 +1693,8 @@ struct EditorView: View {
             .onChange(of: model.previewSequence) { _ in
                 showPreviousFilm = false
                 clearInlineHighResolution()
-                // Live masks can re-render every 240 ms. Rebuilding the
-                // UIScrollView during a handle drag interrupts the gesture.
+                // LocalMaskCanvas does not own or restore a zoom state.
+                // Keep its gesture/viewport identity stable across renders.
                 if !editingMaskOnPhoto { fitWholePhoto() }
             }
             .onChange(of: selectedTab) { _ in

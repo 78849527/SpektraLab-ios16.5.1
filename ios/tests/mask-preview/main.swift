@@ -69,4 +69,23 @@ let broad = MaskPhotoGeometry.radius(
     rect: portrait, horizontal: true)
 verify(close(broad, 0.7), "maximum control radius")
 
+
+// The preview source can change from a 1440px render to another image size
+// without changing the aspect-fit photo/handle rectangle in Scheme A.
+let portraitPreview = MaskPhotoGeometry.fittedRect(
+    image: CGSize(width: 1080, height: 1440),
+    viewport: CGSize(width: 390, height: 500))
+verify(close(portraitPreview.minX, portrait.minX) &&
+       close(portraitPreview.minY, portrait.minY) &&
+       close(portraitPreview.width, portrait.width) &&
+       close(portraitPreview.height, portrait.height),
+       "same aspect ratio and viewport keep fixed local canvas geometry")
+let portraitHandle = MaskPhotoGeometry.point(
+    CGPoint(x: 0.25, y: 0.75), in: portraitPreview)
+let fullHandle = MaskPhotoGeometry.point(
+    CGPoint(x: 0.25, y: 0.75), in: portrait)
+verify(close(portraitHandle.x, fullHandle.x) &&
+       close(portraitHandle.y, fullHandle.y),
+       "live preview image replacement does not shift mask handle")
+
 print("MASK_PHOTO_GEOMETRY_PASS: portrait, landscape, handles, rotation, clamps")

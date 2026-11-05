@@ -1,14 +1,13 @@
 import SwiftUI
 
-/// A photo-space, finger-driven mask editor. The underlying native
-/// UIScrollView is locked to aspect-fit while this overlay is visible;
-/// otherwise screen-space handles could drift under pinch/pan. Editing
-/// updates the original desktop EditMask model directly. No preview pixels,
-/// colour math, Metal shaders or export paths are changed by this view.
+/// Finger-driven masks displayed in the *same* photoRect as LocalMaskCanvas.
+/// The photo and handles share a single fitted geometry source, with no
+/// UIScrollView, zoom restoration or independent photo aspect-fit calculation.
+/// Only UI positions change; desktop EditMask, shaders and export are untouched.
 struct InlineMaskOverlay: View {
     @Binding var masks: [EditMask]
     @Binding var selectedID: UUID?
-    let imageSize: CGSize
+    let photoRect: CGRect
 
     @State private var lineDragStartA: CGPoint?
     @State private var lineDragStartB: CGPoint?
@@ -129,9 +128,6 @@ struct InlineMaskOverlay: View {
 
     var body: some View {
         GeometryReader { geo in
-            let photoRect = MaskPhotoGeometry.fittedRect(
-                image: imageSize, viewport: geo.size
-            )
             if let i = index, masks.indices.contains(i),
                let shape = masks[i].components.first, !photoRect.isEmpty {
                 ZStack {
