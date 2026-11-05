@@ -8,7 +8,9 @@ final class EditorModel: ObservableObject {
     @Published var original: UIImage?
     @Published var processed: UIImage?
     @Published var status = "请选择照片，然后调整真实的胶片／相纸参数。"
-    @Published var isBusy = false
+    @Published var isBusy = false     // photo transfer or full-resolution export only
+    @Published var isRendering = false
+    @Published var realtimeEnabled = true
     @Published var compare = false
     @Published var isDirty = false
     @Published var lastElapsedMS: Double?
@@ -29,6 +31,9 @@ final class EditorModel: ObservableObject {
 
     private var sourceData: Data?
     private var photoID = UUID()
+    private var debounceTask: Task<Void, Never>?
+    private var previewInFlight = false
+    private var requestVersion = 0
 
     var hasPhoto: Bool { sourceData != nil }
     private let renderer = SpectralRenderer()
@@ -67,10 +72,87 @@ final class EditorModel: ObservableObject {
         markDirty()
     }
 
+    /// UI changes coalesce for 240 ms; a running Metal render is never
+    /// cancelled mid-kernel or duplicated. The newest settings win.
     func markDirty() {
         guard sourceData != nil else { return }
+        requestVersion += 1
         isDirty = true
-        if !isBusy { status = "参数已修改，点击「应用设置」重新渲染" }
+        if !isBusy && realtimeEnabled {
+            scheduleLivePreview()
+        } else if !isBusy {
+            status = "调整已修改，点击「立即预览」应用"
+        }
+    }
+
+    func setRealtime(_ enabled: Bool) {
+        realtimeEnabled = enabled
+        if enabled && isDirty && !isBusy {
+            scheduleLivePreview()
+        } else if !enabled {
+            debounceTask?.cancel()
+            debounceTask = nil
+            if isDirty { status = "实时预览已关闭，点击「立即预览」应用" }
+        }
+    }
+
+    private func scheduleLivePreview() {
+        debounceTask?.cancel()
+        guard !isBusy, realtimeEnabled, hasPhoto else { return }
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 240_000_000)
+            guard !Task.isCancelled else { return }
+            self?.startPreview()
+        }
+    }
+
+    private func startPreview() {
+        guard !isBusy, !previewInFlight, let data = sourceData else { return }
+        guard !FilmCatalog.films.isEmpty, !FilmCatalog.papers.isEmpty else {
+            status = "胶片或相纸资源未加载"
+            return
+        }
+        debounceTask?.cancel()
+        debounceTask = nil
+        let captured = snapshot()
+        let capturedPhotoID = photoID
+        previewInFlight = true
+        isRendering = true
+        isDirty = false
+        status = "光谱预览计算中…"
+
+        renderer.render(data: data, photoID: capturedPhotoID, settings: captured) { [weak self] outcome in
+            guard let self else { return }
+            self.previewInFlight = false
+            self.isRendering = false
+
+            let upToDate = self.photoID == capturedPhotoID && self.snapshot() == captured
+            switch outcome {
+            case let .success(photo):
+                if upToDate {
+                    self.original = photo.original
+                    self.processed = photo.processed
+                    self.lastElapsedMS = photo.elapsedMS
+                    self.status = "\(FilmCatalog.filmName(captured.filmStock)) · 已实时预览"
+                    self.isDirty = false
+                    self.onSuccessfulRender?(captured)
+                }
+            case let .failure(error):
+                if upToDate {
+                    self.status = "光谱渲染失败：\(error.localizedDescription)"
+                    self.isDirty = true
+                    // Do not retry an invalid stock/parameter forever.
+                }
+            }
+            // An outdated result must not overwrite the newer slider values.
+            // Schedule one fresh render after the latest gesture pauses.
+            if !upToDate && self.realtimeEnabled && !self.isBusy {
+                self.isDirty = true
+                self.scheduleLivePreview()
+            } else if !upToDate {
+                self.isDirty = true
+            }
+        }
     }
 
     func selectFilm(_ id: String) {
@@ -94,7 +176,7 @@ final class EditorModel: ObservableObject {
     }
 
     func importPhoto(_ item: PhotosPickerItem?) {
-        guard let item, !isBusy else { return }
+        guard let item, !isBusy, !isRendering else { return }
         isBusy = true
         status = "读取照片中…"
         Task {
@@ -117,7 +199,7 @@ final class EditorModel: ObservableObject {
         format: PreviewExporter.Format,
         completion: @escaping (Result<HighResExportResult, Error>) -> Void
     ) {
-        guard let data = sourceData, processed != nil, !isBusy else {
+        guard let data = sourceData, processed != nil, !isBusy, !isRendering else {
             status = "请先选择照片并完成预览"
             return
         }
@@ -125,6 +207,8 @@ final class EditorModel: ObservableObject {
             status = "请先应用未渲染的参数"
             return
         }
+        debounceTask?.cancel()
+        debounceTask = nil
         isBusy = true
         exportPhase = "准备高清导出…"
         status = "高清导出执行中，预览已临时释放 GPU 缓存"
@@ -152,31 +236,17 @@ final class EditorModel: ObservableObject {
     }
 
     func applySettings() {
-        guard let data = sourceData, !isBusy else { return }
-        guard !FilmCatalog.films.isEmpty, !FilmCatalog.papers.isEmpty else {
-            status = "找不到原版胶片或相纸资源，无法执行模拟"
+        // Explicit refresh bypasses debounce and retains the same serialized
+        // original 81-wavelength engine/session path.
+        guard !isBusy else { return }
+        debounceTask?.cancel()
+        debounceTask = nil
+        if previewInFlight {
+            isDirty = true
+            // The current render completion will schedule the latest values.
             return
         }
-        let settings = snapshot()
-        isDirty = false
-        isBusy = true
-        status = "正在使用原版光谱引擎渲染…"
-        renderer.render(data: data, photoID: photoID, settings: settings) { [weak self] result in
-            guard let self else { return }
-            self.isBusy = false
-            switch result {
-            case let .success(photo):
-                self.original = photo.original
-                self.processed = photo.processed
-                self.lastElapsedMS = photo.elapsedMS
-                self.status = "\(FilmCatalog.filmName(settings.filmStock)) · \(FilmCatalog.paperName(settings.printStock)) · 已渲染"
-                self.onSuccessfulRender?(settings)
-            case let .failure(error):
-                self.lastElapsedMS = nil
-                self.isDirty = true
-                self.status = "引擎错误：\(error.localizedDescription)"
-            }
-        }
+        startPreview()
     }
 }
 
@@ -199,6 +269,29 @@ private enum FilmBrowseFilter: String, CaseIterable {
     }
 }
 
+private enum EditorTab: String, CaseIterable {
+    case film = "胶片"
+    case paper = "相纸"
+    case adjust = "调节"
+    case presets = "预设"
+    case export = "导出"
+
+    var symbol: String {
+        switch self {
+        case .film: return "film"
+        case .paper: return "square.stack.3d.up"
+        case .adjust: return "slider.horizontal.3"
+        case .presets: return "bookmark"
+        case .export: return "square.and.arrow.up"
+        }
+    }
+}
+
+private enum AdjustmentGroup: String, CaseIterable {
+    case camera = "拍摄与胶片"
+    case print = "暗房冲印"
+}
+
 struct EditorView: View {
     let onBack: () -> Void
 
@@ -217,13 +310,15 @@ struct EditorView: View {
     @State private var darkroomExpanded = false
     @State private var presetsExpanded = false
     @State private var exportExpanded = false
+    @State private var selectedTab: EditorTab = .adjust
+    @State private var adjustmentGroup: AdjustmentGroup = .camera
 
     private var filteredFilms: [FilmCatalog.Stock] {
         FilmCatalog.films.filter { filmFilter.accepts($0) }
     }
 
     private var canExport: Bool {
-        !model.isBusy && !model.isDirty && model.processed != nil
+        !model.isBusy && !model.isRendering && !model.isDirty && model.processed != nil
     }
 
     private var activeFilmName: String { FilmCatalog.filmName(model.filmID) }
@@ -262,7 +357,10 @@ struct EditorView: View {
         Last high-res export: \(model.lastExportInfo)
         Saved presets: \(presetStore.presets.count)
         Recent combinations: \(presetStore.recentPairs.count)
-        UI: darkroom v0.7
+        UI: darkroom v0.8 top-tabs
+        Live preview: (model.realtimeEnabled)
+        Live rendering: (model.isRendering)
+        Live debounce: 240 ms
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
@@ -349,7 +447,7 @@ struct EditorView: View {
                     .background(Color.black.opacity(0.65), in: Capsule())
                     .padding(12)
             }
-            .frame(height: min(UIScreen.main.bounds.height * 0.40, 360))
+            .frame(height: min(UIScreen.main.bounds.height * (selectedTab == .adjust ? 0.255 : 0.31), 275))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(DarkroomStyle.line))
 
@@ -361,7 +459,7 @@ struct EditorView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(DarkroomStyle.accent)
-                .disabled(model.isBusy)
+                .disabled(model.isBusy || model.isRendering)
 
                 Button {
                     model.compare.toggle()
@@ -707,7 +805,7 @@ struct EditorView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(DarkroomStyle.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if model.isBusy {
+            if model.isBusy || model.isRendering {
                 ProgressView(model.exportPhase.isEmpty ? "光谱引擎处理中…" : model.exportPhase)
                     .tint(DarkroomStyle.accent)
             }
@@ -720,10 +818,131 @@ struct EditorView: View {
         .padding(.horizontal, 4)
     }
 
+    private var tabs: some View {
+        HStack(spacing: 3) {
+            ForEach(EditorTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 15, weight: .medium))
+                        Text(tab.rawValue)
+                            .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .medium))
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(selectedTab == tab ? DarkroomStyle.accent : Color.clear)
+                            .frame(height: 2)
+                    }
+                    .foregroundStyle(selectedTab == tab ? DarkroomStyle.accent : DarkroomStyle.secondary)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tab.rawValue + "菜单")
+            }
+        }
+        .padding(.horizontal, 15)
+        .padding(.top, 9)
+        .padding(.bottom, 6)
+        .background(DarkroomStyle.surface)
+    }
+
+    private var quickAdjustmentPanel: some View {
+        DarkroomPanel {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack {
+                    Text("实时光谱调节")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(DarkroomStyle.primary)
+                    Spacer()
+                    Toggle(
+                        "实时",
+                        isOn: Binding(
+                            get: { model.realtimeEnabled },
+                            set: { model.setRealtime($0) }
+                        )
+                    )
+                    .font(.system(size: 12))
+                    .tint(DarkroomStyle.accent)
+                    .fixedSize()
+                }
+
+                Picker("参数分组", selection: $adjustmentGroup) {
+                    ForEach(AdjustmentGroup.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                VStack(spacing: 8) {
+                    if adjustmentGroup == .camera {
+                        DarkroomControlRow(
+                            label: "曝光补偿", value: $model.exposureEV,
+                            range: -3...3, step: 0.1, suffix: " EV",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "胶片颗粒", value: $model.grainAmount,
+                            range: 0...2, step: 0.1, suffix: "×",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "光晕强度", value: $model.halationAmount,
+                            range: 0...3, step: 0.1, suffix: "×",
+                            disabled: model.isBusy
+                        )
+                    } else {
+                        DarkroomControlRow(
+                            label: "相纸曝光", value: $model.printExposure,
+                            range: 0.2...3, step: 0.05, suffix: "×",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "放大机 M 滤色", value: $model.magentaShift,
+                            range: -0.5...0.5, step: 0.05, suffix: "",
+                            disabled: model.isBusy
+                        )
+                        DarkroomControlRow(
+                            label: "放大机 Y 滤色", value: $model.yellowShift,
+                            range: -0.5...0.5, step: 0.05, suffix: "",
+                            disabled: model.isBusy
+                        )
+                    }
+                }
+                if model.realtimeEnabled {
+                    Text("移动滑块后约 0.24 秒合并更新，复用原版负片缓存。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                } else {
+                    Text("实时预览已关闭。使用底部「立即预览」应用参数。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activePanel: some View {
+        switch selectedTab {
+        case .film: filmSection
+        case .paper: paperSection
+        case .adjust: quickAdjustmentPanel
+        case .presets:
+            presetsSection
+                .onAppear { presetsExpanded = true }
+        case .export:
+            exportSection
+                .onAppear { exportExpanded = true }
+        }
+    }
+
     private var bottomBar: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(model.isDirty ? "待应用" : "光谱引擎")
+                Text(model.isRendering ? "渲染中" : (model.isDirty ? "待更新" : "光谱引擎"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(model.isDirty ? DarkroomStyle.accent : DarkroomStyle.primary)
                 Text(model.lastElapsedMS.map { String(format: "%.0f ms", $0) } ?? "81 波长 · Metal")
@@ -741,7 +960,7 @@ struct EditorView: View {
                     } else {
                         Image(systemName: model.isDirty ? "wand.and.stars" : "arrow.clockwise")
                     }
-                    Text(model.isDirty ? "应用调整" : "重新渲染")
+                    Text(model.isDirty ? "立即预览" : "重新渲染")
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
@@ -753,7 +972,7 @@ struct EditorView: View {
                 model.isBusy ? DarkroomStyle.secondary : DarkroomStyle.accent,
                 in: RoundedRectangle(cornerRadius: 12)
             )
-            .disabled(model.isBusy || !model.hasPhoto || model.filmID.isEmpty || model.paperID.isEmpty)
+            .disabled(model.isBusy || model.isRendering || !model.hasPhoto || model.filmID.isEmpty || model.paperID.isEmpty)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -765,19 +984,23 @@ struct EditorView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    previewSection
-                    filmSection
-                    paperSection
-                    controlsSection
-                    presetsSection
-                    exportSection
-                    statusSection
+            VStack(spacing: 0) {
+                tabs
+
+                previewSection
+                    .padding(.horizontal, 15)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 10) {
+                        activePanel
+                        statusSection
+                    }
+                    .padding(.horizontal, 15)
+                    .padding(.top, 6)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 15)
-                .padding(.top, 14)
-                .padding(.bottom, 20)
             }
             .background(DarkroomStyle.background.ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
