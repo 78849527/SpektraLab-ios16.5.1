@@ -346,7 +346,10 @@ struct EditorView: View {
     @State private var mostRecentExport: ShareItem?
     @State private var mostRecentExportLabel = ""
     @State private var showPreviousFilm = false
-    @State private var detailInspection: DetailInspection?
+    @State private var inlineFullResolution: HighResExportResult?
+    @State private var inlineResolutionVersion = -1
+    @State private var savingToPhotos = false
+    @State private var photoSaveFeedback = ""
 
     @State private var filmFilter: FilmBrowseFilter = .all
     @State private var paperFilter: PaperBrowseFilter = .all
@@ -366,7 +369,28 @@ struct EditorView: View {
     }
 
     private var canExport: Bool {
-        !model.isBusy && !model.isRendering && !model.isDirty && model.processed != nil
+        !model.isBusy && !model.isRendering && !model.isDirty &&
+        !savingToPhotos && model.processed != nil
+    }
+
+    private var inlineHighResolutionURL: URL? {
+        guard inlineResolutionVersion == model.previewSequence,
+              !model.isDirty, !model.compare, !showPreviousFilm,
+              let result = inlineFullResolution,
+              FileManager.default.fileExists(atPath: result.url.path) else {
+            return nil
+        }
+        return result.url
+    }
+
+    private func clearInlineHighResolution() {
+        // The full-resolution image is a temporary JPEG. Old files need not
+        // accumulate as the user works through many live preview changes.
+        if let old = inlineFullResolution {
+            try? FileManager.default.removeItem(at: old.url)
+        }
+        inlineFullResolution = nil
+        inlineResolutionVersion = -1
     }
 
     private var activeFilmName: String { FilmCatalog.filmName(model.filmID) }
@@ -414,7 +438,8 @@ struct EditorView: View {
         Live rendering: \(model.isRendering)
         Live debounce: 240 ms
         Halation amount means: back-reflection area; zero disables whole halation node
-        High-res detail inspector: 12.5MP maximum, on demand, local only
+        Inline pinch-to-zoom: full-tier 12.5MP on demand, no separate screen
+        Direct photo library save: PhotoKit add-only JPEG and PNG
         Print paper selector: horizontal swipe + dropdown
         Controls: 44-point tap targets and integer step indexes
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
@@ -441,14 +466,64 @@ struct EditorView: View {
         }
     }
 
+    /// Load the original full-tier spectral render into the *same* preview.
+    /// First pinch/double tap requests it. It is not an enlarged thumbnail.
     private func inspectFullResolution() {
-        guard canExport else {
-            model.status = "请先应用当前参数再检查高清细节"
-            return
-        }
+        guard canExport, inlineHighResolutionURL == nil else { return }
+        let version = model.previewSequence
         model.exportOriginal(format: .jpeg, limitOverride: .high) { result in
             if case let .success(info) = result {
-                detailInspection = DetailInspection(result: info)
+                guard version == model.previewSequence, !model.isDirty else {
+                    try? FileManager.default.removeItem(at: info.url)
+                    return
+                }
+                clearInlineHighResolution()
+                inlineFullResolution = info
+                inlineResolutionVersion = version
+                model.status = "已在预览区载入高清细节：" + info.summary
+            }
+        }
+    }
+
+    private func saveToPhotoLibrary(_ format: PreviewExporter.Format) {
+        guard canExport else {
+            photoSaveFeedback = "请先完成预览，再保存照片"
+            return
+        }
+        savingToPhotos = true
+        photoSaveFeedback = "检查相册写入权限…"
+        PhotoLibrarySaver.requestAddPermission { permission in
+            switch permission {
+            case let .failure(error):
+                savingToPhotos = false
+                photoSaveFeedback = error.localizedDescription
+                model.status = photoSaveFeedback
+            case .success:
+                photoSaveFeedback = "正在生成高清照片…"
+                model.exportOriginal(format: format) { result in
+                    switch result {
+                    case let .failure(error):
+                        savingToPhotos = false
+                        photoSaveFeedback = "高清生成失败：" + error.localizedDescription
+                        model.status = photoSaveFeedback
+                    case let .success(info):
+                        mostRecentExport = ShareItem(url: info.url)
+                        mostRecentExportLabel = info.summary
+                        photoSaveFeedback = "正在写入 iPhone 相册…"
+                        PhotoLibrarySaver.saveGeneratedFile(info.url) { saved in
+                            savingToPhotos = false
+                            switch saved {
+                            case .success:
+                                photoSaveFeedback = "已保存到相册 · " + info.fileFormat +
+                                    " · \(info.width) × \(info.height)"
+                                model.status = photoSaveFeedback
+                            case let .failure(error):
+                                photoSaveFeedback = "保存相册失败：" + error.localizedDescription
+                                model.status = photoSaveFeedback
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -487,10 +562,12 @@ struct EditorView: View {
                         ? model.original
                         : (showPreviousFilm ? model.previousProcessed : model.processed) {
                         GeometryReader { g in
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: g.size.width, height: g.size.height)
+                            InlineZoomPreview(
+                                preview: image,
+                                highResolutionURL: inlineHighResolutionURL,
+                                onNeedsHighResolution: { inspectFullResolution() }
+                            )
+                            .frame(width: g.size.width, height: g.size.height)
                         }
                     } else {
                         VStack(spacing: 12) {
@@ -509,7 +586,8 @@ struct EditorView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Text(model.compare ? "ORIGINAL" : (showPreviousFilm ? "PREVIOUS FILM" : "FILM PREVIEW"))
+                Text(model.compare ? "ORIGINAL" : (showPreviousFilm ? "PREVIOUS FILM" :
+                    (inlineHighResolutionURL == nil ? "FILM PREVIEW · PINCH TO LOAD HD" : "FULL-TIER HD DETAIL")))
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .tracking(1.4)
                     .foregroundStyle(DarkroomStyle.primary.opacity(0.9))
@@ -559,16 +637,35 @@ struct EditorView: View {
                 Button {
                     inspectFullResolution()
                 } label: {
-                    Label("高清局部检查", systemImage: "magnifyingglass")
+                    Label(inlineHighResolutionURL == nil ? "加载高清" : "高清已载入",
+                          systemImage: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.bordered)
                 .tint(DarkroomStyle.accent)
+                .disabled(!canExport || inlineHighResolutionURL != nil)
+
+                Button {
+                    saveToPhotoLibrary(.jpeg)
+                } label: {
+                    Label(savingToPhotos ? "保存中…" : "保存相册",
+                          systemImage: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DarkroomStyle.accent)
                 .disabled(!canExport)
-                Spacer()
-                Text("原图重新渲染 · 最多 12.5MP")
-                    .font(.system(size: 10))
-                    .foregroundStyle(DarkroomStyle.secondary)
+            }
+
+            Text(inlineHighResolutionURL == nil
+                 ? "直接在照片上双指缩放或双击：自动载入最高 12.5MP 的真实光谱图。"
+                 : "高清图已在当前预览中加载，可继续缩放、拖动并调整查看区域。")
+                .font(.system(size: 10))
+                .foregroundStyle(DarkroomStyle.secondary)
+            if !photoSaveFeedback.isEmpty {
+                Text(photoSaveFeedback)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DarkroomStyle.accent)
             }
         }
     }
@@ -919,6 +1016,15 @@ struct EditorView: View {
                     .tint(DarkroomStyle.accent)
                     .disabled(!canExport)
 
+                    Menu {
+                        Button("保存 JPEG 到相册") { saveToPhotoLibrary(.jpeg) }
+                        Button("保存 PNG 到相册") { saveToPhotoLibrary(.png) }
+                    } label: {
+                        Label(savingToPhotos ? "保存到相册中…" : "直接保存到 iPhone 相册",
+                              systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(!canExport)
+
                     if let last = mostRecentExport {
                         Text(mostRecentExportLabel)
                             .font(.system(size: 11))
@@ -1188,8 +1294,15 @@ struct EditorView: View {
             }
             .toolbarBackground(DarkroomStyle.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .onChange(of: selectedPhoto) { model.importPhoto($0) }
-            .onChange(of: model.previewSequence) { _ in showPreviousFilm = false }
+            .onChange(of: selectedPhoto) {
+                clearInlineHighResolution()
+                photoSaveFeedback = ""
+                model.importPhoto($0)
+            }
+            .onChange(of: model.previewSequence) { _ in
+                showPreviousFilm = false
+                clearInlineHighResolution()
+            }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
             .onChange(of: model.grainAmount) { _ in model.markDirty() }
@@ -1218,9 +1331,7 @@ struct EditorView: View {
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
             }
-            .fullScreenCover(item: $detailInspection) { inspection in
-                DetailInspectionView(inspection: inspection)
-            }
+
         }
         .preferredColorScheme(.dark)
     }
