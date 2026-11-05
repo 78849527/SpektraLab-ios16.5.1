@@ -119,26 +119,18 @@ selection and brush rasterisation or visibly mark unsupported; compare
 ProPhoto/D65 transforms and matched default/autoexposure/filter parameters
 against Windows and macOS on the same image. These gates are not complete.
 
-## Build 21 (0.14.1 beta 2): memory-bounded export and device rollout
+## Build 21 (0.14.1 beta 2): safe JPEG export first
 
-- Keep prior Build 20 unchanged. Build 21 has a distinct bundle identifier,
-  allowing Build 19, Build 20 and Build 21 to coexist for testing.
-- Full-size graded **JPEG** goes from the original Layer2 output Metal
-  texture directly into CIImage(mtlTexture:options:) with ROMM colour
-  tagging and a Metal-device Core Image context. It avoids the redundant
-  8-bytes/pixel GPU-to-CPU readback and CGImage allocation (48MB at 6MP).
-- The initial GPU-direct PNG candidate, and its fallback through
-  Core Image's PNG writer, both produced transparent-black output in the
-  macOS Metal fixtures. Both unsafe PNG writer paths have been rejected.
-  PNG now uses the 16-bit CGImage/CPU readback, then Core Graphics performs
-  explicit ROMM→sRGB conversion into an opaque 8-bit bitmap and **ImageIO**
-  writes the PNG. This requires an extra CPU buffer, so PNG does not enjoy
-  the JPEG memory improvement; its pixels and alpha must pass fixture tests.
-- Preview still uses the proven readback path; native C++ optical-film
-  simulation and original desktop Metal shader are unchanged.
-- Build21 tests must decode both GPU-JPEG and CPU-safe-PNG, verify
-  nontransparent output and require close matching sRGB center samples.
-- The 12.5MP post-print export tier remains disabled pending A15 memory
-  validation. Do not interpret a Mac-runner pass as iPhone stability.
-- Test 6MP JPEG and PNG with global grade, RGB curves and radial mask,
-  then try five repeated exports. Compare results with Build20.
+- Independent bundle identifier allows Build 19 and Build 20 to remain installed.
+- Full-size graded JPEG passes original macOS Metal→CIImage→sRGB encoding
+  without the 8-bytes-per-pixel full-frame GPU-to-CPU copy (~48MB at 6MP).
+- Multiple pixel fixtures exposed that graded PNG was transparent black with
+  several encoding approaches, including Core Image and Core Graphics.
+  Graded PNG is **explicitly blocked** rather than silently writing damaged
+  files. Neutral source export still uses the unchanged original encoder.
+- 12.5MP graded export remains gated until 6MP succeeds on a real A15 phone.
+- Automatic tests must decode the JPEG, verify 6MP kernel behaviour, opaque
+  output and fixed reference colours, plus assert that graded PNG refuses.
+- First-device trial: import photo → global grading + RGB curves → 6MP JPEG,
+  inspect saved JPEG, then repeat five exports to assess memory and stability.
+- The preview-area local mask interaction remains deferred.

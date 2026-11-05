@@ -165,6 +165,11 @@ final class SpectralRenderer {
                 "调色测试版暂时仅支持安全档 6MP 导出。请在更多→导出中切换安全档，12.5MP 将在真机内存测试后开放。"
             )
         }
+        if needsDesktopLayer2(settings) && format == .png {
+            throw PortError.message(
+                "当前调色测试版只开放 JPEG 高清导出。PNG 透明度测试未通过，修复前禁止生成损坏文件。"
+            )
+        }
 
         // The preview's native caches can be large. Release them *before*
         // decoding the high-resolution frame. A later Apply opens preview
