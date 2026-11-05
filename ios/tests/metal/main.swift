@@ -92,4 +92,83 @@ check(channel(colored, 2, 2, 0) >
       channel(colored, 2, 2, 1) + 0.07,
       "Mac colour balance master red direction")
 
-print("METAL_GPU_FIXTURES_PASS: neutral, exposure, red curve, radial, linear, color balance")
+
+// Different source values make range-mask coverage provable, not merely
+// a pass of "the image changed somewhere."
+for y in 0..<height {
+    for x in 0..<width {
+        let v: UInt16 = x < 3 ? 13107 : 52428  // 0.2 / 0.8
+        for k in 0..<3 { input[(y * width + x) * 4 + k] = v }
+    }
+}
+var highRange = EditMask.make(.luminanceRange)
+highRange.components[0].low = 0.55
+highRange.components[0].high = 1
+highRange.components[0].softness = 0.05
+highRange.adjustments.exposure = 1
+let lumaImage = try render(.default, masks: [highRange])
+check(abs(channel(lumaImage, 0, 2, 0) - 0.2) < 0.02,
+      "Mac luminance mask leaves dark pixels unchanged")
+check(channel(lumaImage, 4, 2, 0) > 0.88,
+      "Mac luminance mask targets bright pixels")
+
+// A chroma-only selection is expressed in native ProPhoto values.
+for y in 0..<height {
+    for x in 0..<width {
+        let source: [UInt16] = x < 3
+            ? [49151, 22937, 19660] // ROMM .75/.35/.30
+            : [29491, 29491, 29491] // neutral .45
+        for k in 0..<3 { input[(y * width + x) * 4 + k] = source[k] }
+    }
+}
+var chroma = EditMask.make(.colorRange)
+chroma.components[0].color = SIMD3<Double>(0.75, 0.35, 0.3)
+chroma.components[0].tolerance = 0.1
+chroma.adjustments.exposure = 1
+let colorMask = try render(.default, masks: [chroma])
+check(channel(colorMask, 1, 2, 0) > 0.90,
+      "Mac colour-range mask brightens matching chroma")
+check(abs(channel(colorMask, 4, 2, 0) - 0.45) < 0.02,
+      "Mac colour-range mask leaves dissimilar chroma unchanged")
+
+// Restore a uniform 16-bit print, so a vignette and inversion can compare
+// spatial coverage without unequal source pixels.
+for y in 0..<height {
+    for x in 0..<width {
+        for k in 0..<3 { input[(y * width + x) * 4 + k] = 32768 }
+    }
+}
+var vignette = Adjustments.default
+vignette.vignette.amount = -85
+let vignetted = try render(vignette)
+check(channel(vignetted, 0, 0, 0) <
+      channel(vignetted, 2, 2, 0) - 0.06,
+      "Mac encoded-space vignette darkens corners")
+
+var inverted = radial
+inverted.inverted = true
+let invertedImage = try render(.default, masks: [inverted])
+check(channel(invertedImage, 0, 0, 0) >
+      channel(invertedImage, 2, 2, 0) + 0.08,
+      "Mac inverted radial mask reverses the affected region")
+
+// The engine's native RGBA16 print may have padded rows. Assert neutral
+// bypass honours that row stride rather than leaking padding into pixels.
+let paddedRow = width + 2
+var padded = [UInt16](repeating: 54321, count: paddedRow * height * 4)
+for y in 0..<height {
+    for x in 0..<width {
+        let d = (y * paddedRow + x) * 4
+        let src = (y * width + x) * 4
+        for k in 0..<4 { padded[d + k] = input[src + k] }
+    }
+}
+let paddedImage = try padded.withUnsafeBufferPointer { buf in
+    try processor.apply(
+        raw: buf.baseAddress!, width: width, height: height,
+        rowStridePixels: paddedRow, adjustments: .default)
+}
+check(abs(channel(paddedImage, 4, 4, 0) - Double(32768)/65535) < 1e-5,
+      "native 16-bit padded row input bypass preserves source pixels")
+
+print("METAL_GPU_FIXTURES_PASS: neutral, exposure, red curve, radial, linear, luminance, colour range, colour balance, vignette, inverse mask, padded rows")
