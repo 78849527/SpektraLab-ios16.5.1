@@ -126,24 +126,6 @@ jobs:
           test -f "$APP/SpectraPort"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortParityBeta"
           /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "20"
-      - name: Package separate unsigned iOS 16 parity beta IPA
-        run: |
-          set -euo pipefail
-          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          IPA=SpectraPort-ios16-v0.14.0-beta1-parity-unsigned.ipa
-          mkdir -p ios/build/parity-package/Payload
-          ditto "$APP" ios/build/parity-package/Payload/SpectraPort.app
-          (cd ios/build/parity-package && zip -q -r "$GITHUB_WORKSPACE/$IPA" Payload)
-          test -s "$IPA"
-          unzip -tq "$IPA"
-          echo "Unsigned beta IPA ready: $(du -h "$IPA" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain parity beta IPA (not a stable GitHub Release)
-        uses: actions/upload-artifact@v4
-        with:
-          name: SpectraPort-ios16-v0.14.0-beta1-parity-unsigned
-          path: SpectraPort-ios16-v0.14.0-beta1-parity-unsigned.ipa
-          if-no-files-found: error
-          retention-days: 14
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
