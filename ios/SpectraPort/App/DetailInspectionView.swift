@@ -19,7 +19,7 @@ final class DetailImageScrollView: UIScrollView {
         clipsToBounds = true
         showsVerticalScrollIndicator = false
         showsHorizontalScrollIndicator = false
-        bouncesZoom = true
+        bouncesZoom = false
         picture.contentMode = .scaleToFill
         addSubview(picture)
     }
@@ -45,10 +45,10 @@ final class DetailImageScrollView: UIScrollView {
         minimumZoomScale = fit
         maximumZoomScale = max(1.5, fit * 12)
         if needsFit {
-            zoomScale = fit
-            needsFit = false
+            resetToFit()
+        } else {
+            centerImage()
         }
-        centerImage()
     }
 
     func centerImage() {
@@ -56,6 +56,29 @@ final class DetailImageScrollView: UIScrollView {
         let vertical = max(0, (bounds.height - contentSize.height) / 2)
         contentInset = UIEdgeInsets(top: vertical, left: horizontal,
                                    bottom: vertical, right: horizontal)
+    }
+
+    /// A real "fit" command: reset scale and offset, not just swap the image.
+    /// The first layout may occur after SwiftUI's view update; deferred layout
+    /// is handled by layoutSubviews via needsFit.
+    func resetToFit(animated: Bool = false) {
+        guard intrinsicPixels.width > 0, intrinsicPixels.height > 0 else { return }
+        guard bounds.width > 0, bounds.height > 0 else {
+            needsFit = true
+            setNeedsLayout()
+            return
+        }
+        let fit = min(bounds.width / intrinsicPixels.width,
+                      bounds.height / intrinsicPixels.height)
+        minimumZoomScale = fit
+        maximumZoomScale = max(1.5, fit * 12)
+        setZoomScale(fit, animated: animated)
+        centerImage()
+        if !animated {
+            setContentOffset(CGPoint(x: -contentInset.left,
+                                     y: -contentInset.top), animated: false)
+        }
+        needsFit = false
     }
 }
 
