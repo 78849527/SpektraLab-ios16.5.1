@@ -146,7 +146,7 @@ enum FullSizeExporter {
             if format == .jpeg {
                 try context.writeJPEGRepresentation(
                     of: image, to: url, colorSpace: sRGB,
-                    options: [.lossyCompressionQuality: 0.94]
+                    options: [:]
                 )
             } else {
                 try context.writePNGRepresentation(

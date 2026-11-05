@@ -12,7 +12,7 @@ final class EditorModel: ObservableObject {
     @Published var compare = false
     @Published var isDirty = false
     @Published var lastElapsedMS: Double?
-    @Published var exportLimit: ExportLimit = .high
+    @Published var exportLimit: ExportLimit = .safe
     @Published var exportPhase = ""
     @Published var lastExportInfo = "尚未进行高清导出"
 
@@ -171,12 +171,12 @@ struct EditorView: View {
         Rendered dimensions: \(dimensions)
         Film: \(model.filmID)
         Paper: \(model.paperID)
-        Exposure EV: \(model.exposureEV)
-        Grain amount: \(model.grainAmount)
-        Halation amount: \(model.halationAmount)
-        Print exposure: \(model.printExposure)
-        Magenta shift: \(model.magentaShift)
-        Yellow shift: \(model.yellowShift)
+        Exposure EV: \(String(format: "%.2f", model.exposureEV))
+        Grain amount: \(String(format: "%.2f", model.grainAmount))
+        Halation amount: \(String(format: "%.2f", model.halationAmount))
+        Print exposure: \(String(format: "%.2f", model.printExposure))
+        Magenta shift: \(String(format: "%.2f", model.magentaShift))
+        Yellow shift: \(String(format: "%.2f", model.yellowShift))
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")
         Engine: persistent session, spk_reprint
         Pending edits: \(model.isDirty)
