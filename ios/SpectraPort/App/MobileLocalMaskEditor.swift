@@ -6,8 +6,8 @@ import SwiftUI
 /// until its per-mask raster is implemented and tested.
 struct MobileLocalMaskEditor: View {
     @Binding var masks: [EditMask]
-    let imageAspectRatio: CGFloat
-    @State private var selectedID: UUID?
+    /// One selection shared with the handles shown over the photo preview.
+    @Binding var selectedID: UUID?
 
     private var selectedIndex: Int? {
         if let selectedID, let i = masks.firstIndex(where: { $0.id == selectedID }) {
@@ -125,11 +125,11 @@ struct MobileLocalMaskEditor: View {
                         .tint(DarkroomStyle.accent)
 
                     if kind == .linearGradient || kind == .radialGradient {
-                        MaskGeometryPad(
-                            component: $masks[i].components[0],
-                            imageAspectRatio: imageAspectRatio
-                        )
-                            .frame(height: 178)
+                        Text(kind == .linearGradient
+                            ? "在上方照片拖动黄色连线可移动整个渐变；拖动两端圆点可调整方向和范围。"
+                            : "在上方照片拖动中心圆点定位椭圆，拖动两侧圆点改变宽度与高度。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DarkroomStyle.secondary)
                         if kind == .radialGradient {
                             DarkroomControlRow(
                                 label: "横向范围", value: Binding(
@@ -207,99 +207,10 @@ struct MobileLocalMaskEditor: View {
                 }
             }
 
-            Text("这里使用照片比例下的归一化几何参数，高清渲染时不放大蒙版像素。画笔暂未开放。")
+            Text("局部位置直接在上方照片上操作；下方调整区域参数。蒙版坐标与导出分辨率无关，画笔暂未开放。")
                 .font(.system(size: 10))
                 .foregroundStyle(DarkroomStyle.secondary)
         }
     }
 }
 
-private struct MaskGeometryPad: View {
-    @Binding var component: MaskComponent
-    let imageAspectRatio: CGFloat
-    @State private var dragStart: CGPoint?
-
-    var body: some View {
-        GeometryReader { area in
-            let available = area.size
-            let aspect = max(0.1, min(10, imageAspectRatio))
-            let width = min(available.width, available.height * aspect)
-            let height = width / aspect
-            let origin = CGPoint(
-                x: (available.width - width) / 2,
-                y: (available.height - height) / 2
-            )
-            let rect = CGRect(origin: origin, size: CGSize(width: width, height: height))
-            Canvas { ctx, _ in
-                ctx.fill(Path(rect), with: .color(.black.opacity(0.55)))
-                var grid = Path()
-                for v in [CGFloat(1.0/3.0), CGFloat(2.0/3.0)] {
-                    grid.move(to: CGPoint(x: origin.x + width * v, y: origin.y))
-                    grid.addLine(to: CGPoint(x: origin.x + width * v, y: origin.y + height))
-                    grid.move(to: CGPoint(x: origin.x, y: origin.y + height * v))
-                    grid.addLine(to: CGPoint(x: origin.x + width, y: origin.y + height * v))
-                }
-                ctx.stroke(grid, with: .color(.gray.opacity(0.45)), lineWidth: 1)
-
-                let gold = DarkroomStyle.accent
-                func at(_ p: CGPoint) -> CGPoint {
-                    CGPoint(x: origin.x + p.x * width,
-                            y: origin.y + p.y * height)
-                }
-                if component.kind == .linearGradient {
-                    var path = Path()
-                    path.move(to: at(component.a))
-                    path.addLine(to: at(component.b))
-                    ctx.stroke(path, with: .color(gold), lineWidth: 2)
-                    for p in [component.a, component.b] {
-                        let center = at(p)
-                        let dot = CGRect(x: center.x - 5, y: center.y - 5,
-                                         width: 10, height: 10)
-                        ctx.fill(Path(ellipseIn: dot), with: .color(gold))
-                    }
-                } else if component.kind == .radialGradient {
-                    // The original Mac shader measures radii in long-edge
-                    // units. Convert to photo pixels, not the panel's aspect.
-                    let r = component.radii
-                    let rx = aspect >= 1 ? r.width * width : r.width / aspect * width
-                    let ry = aspect >= 1 ? r.height * aspect * height : r.height * height
-                    let c = at(component.a)
-                    let ring = CGRect(
-                        x: c.x - rx, y: c.y - ry,
-                        width: rx * 2, height: ry * 2
-                    )
-                    ctx.stroke(Path(ellipseIn: ring), with: .color(gold),
-                               lineWidth: 2)
-                    ctx.fill(Path(ellipseIn: CGRect(
-                        x: c.x - 4, y: c.y - 4, width: 8, height: 8
-                    )), with: .color(gold))
-                }
-                ctx.stroke(Path(rect), with: .color(.gray.opacity(0.45)),
-                           lineWidth: 1)
-            }
-            .frame(width: available.width, height: available.height)
-            .background(DarkroomStyle.raised,
-                        in: RoundedRectangle(cornerRadius: 10))
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { drag in
-                        let p = CGPoint(
-                            x: max(0, min(1, (drag.location.x - origin.x) / width)),
-                            y: max(0, min(1, (drag.location.y - origin.y) / height))
-                        )
-                        if component.kind == .linearGradient {
-                            if dragStart == nil {
-                                dragStart = p
-                                component.a = p
-                            }
-                            component.b = p
-                        } else if component.kind == .radialGradient {
-                            component.a = p
-                        }
-                    }
-                    .onEnded { _ in dragStart = nil }
-            )
-        }
-    }
-}
