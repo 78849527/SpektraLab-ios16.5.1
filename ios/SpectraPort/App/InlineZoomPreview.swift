@@ -9,6 +9,8 @@ struct InlineZoomPreview: UIViewRepresentable {
     let preview: UIImage
     let highResolutionURL: URL?
     let resetToken: Int
+    let zoomCommand: Int
+    let zoomDirection: Int
     let onNeedsHighResolution: () -> Void
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
@@ -19,6 +21,7 @@ struct InlineZoomPreview: UIViewRepresentable {
         var onNeedsHighResolution: (() -> Void)?
         var updatingProgrammatically = false
         var lastResetToken: Int?
+        var lastZoomCommand: Int?
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             (scrollView as? DetailImageScrollView)?.picture
@@ -118,22 +121,41 @@ struct InlineZoomPreview: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onNeedsHighResolution = onNeedsHighResolution
         let identifier = highResolutionURL?.path ?? "preview:\(ObjectIdentifier(preview))"
-        if coordinator.lastResetToken != resetToken {
-            coordinator.lastResetToken = resetToken
-            // If the image also changed, install it first; then reset.
-            if coordinator.loadedID == identifier {
-                uiView.resetToFit()
-                return
+
+        if coordinator.loadedID != identifier {
+            if let url = highResolutionURL,
+               let full = UIImage(contentsOfFile: url.path) {
+                coordinator.install(image: full, in: uiView,
+                                    identifier: identifier, highRes: true)
+            } else {
+                coordinator.install(image: preview, in: uiView,
+                                    identifier: identifier, highRes: false)
             }
         }
-        guard coordinator.loadedID != identifier else { return }
-        if let url = highResolutionURL,
-           let highRes = UIImage(contentsOfFile: url.path) {
-            coordinator.install(image: highRes, in: uiView,
-                                identifier: identifier, highRes: true)
-        } else {
-            coordinator.install(image: preview, in: uiView,
-                                identifier: identifier, highRes: false)
+
+        // This token is monotonic; reset works even when the image URL and
+        // UIImage instance did not change. The parent ALSO uses .id() with
+        // the token so a stuck UIScrollView is fully rebuilt as a fallback.
+        if coordinator.lastResetToken != resetToken {
+            coordinator.lastResetToken = resetToken
+            uiView.resetToFit()
+        }
+
+        if coordinator.lastZoomCommand != zoomCommand {
+            coordinator.lastZoomCommand = zoomCommand
+            if zoomCommand > 0 {
+                let multiplier: CGFloat = zoomDirection > 0 ? 1.6 : (1 / 1.6)
+                let target = min(uiView.maximumZoomScale,
+                                 max(uiView.minimumZoomScale, uiView.zoomScale * multiplier))
+                if target <= uiView.minimumZoomScale * 1.001 {
+                    uiView.resetToFit(animated: true)
+                } else {
+                    uiView.setZoomScale(target, animated: true)
+                    if zoomDirection > 0 && !coordinator.highResolutionReady {
+                        coordinator.onNeedsHighResolution?()
+                    }
+                }
+            }
         }
     }
 }
