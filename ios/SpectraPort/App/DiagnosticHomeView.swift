@@ -27,7 +27,7 @@ struct DiagnosticHomeView: View {
 
     var body: some View {
         if showEditor {
-            EditorView()
+            EditorView(onBack: { showEditor = false })
         } else {
             VStack(alignment: .leading, spacing: 20) {
                 Text("SpectraPort")

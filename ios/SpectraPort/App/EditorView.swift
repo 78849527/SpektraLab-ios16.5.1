@@ -1,3 +1,4 @@
+import Metal
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -43,8 +44,35 @@ final class EditorModel: ObservableObject {
 }
 
 struct EditorView: View {
+    let onBack: () -> Void
+
     @StateObject private var model = EditorModel()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var copiedStatus = false
+
+    private func copyStatus() {
+        let metalName = MTLCreateSystemDefaultDevice()?.name ?? "Metal unavailable"
+        let dimensions: String
+        if let rendered = model.processed {
+            dimensions = "\(Int(rendered.size.width)) x \(Int(rendered.size.height))"
+        } else {
+            dimensions = "No rendered frame"
+        }
+        let report = """
+        SpectraPort native iOS port
+        Build: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")
+        iOS: \(UIDevice.current.systemVersion)
+        Device model: \(UIDevice.current.model)
+        Metal: \(metalName)
+        Screen: photo editor
+        Render status: \(model.status)
+        Rendered image: \(model.processed == nil ? "No" : "Yes")
+        Rendered dimensions: \(dimensions)
+        Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
+        """
+        UIPasteboard.general.string = report
+        copiedStatus = true
+    }
 
     var body: some View {
         NavigationStack {
@@ -100,6 +128,20 @@ struct EditorView: View {
             .padding()
             .navigationTitle("SpectraPort")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        onBack()
+                    } label: {
+                        Label("返回诊断", systemImage: "chevron.left")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(copiedStatus ? "已复制" : "复制状态") {
+                        copyStatus()
+                    }
+                }
+            }
             .onChange(of: selectedPhoto) { newValue in
                 model.importPhoto(newValue)
             }

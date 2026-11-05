@@ -40,17 +40,17 @@ jobs:
           test -f "$APP/SpectraPort"
           test ! -f "$APP/SpectraPort.debug.dylib"
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx "16.0"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "2"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "3"
           otool -L "$APP/SpectraPort"
       - name: Package unsigned RELEASE IPA for manual signing
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpectraPort-ios16-diagnostic-release-unsigned.ipa Payload
+          zip -q -r ../SpectraPort-ios16-v0.2.1-navigation-unsigned.ipa Payload
       - name: Upload device build
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-ios16-diagnostic-release-unsigned
-          path: ios/build/SpectraPort-ios16-diagnostic-release-unsigned.ipa
+          name: SpectraPort-ios16-v0.2.1-navigation-unsigned
+          path: ios/build/SpectraPort-ios16-v0.2.1-navigation-unsigned.ipa
           if-no-files-found: error
