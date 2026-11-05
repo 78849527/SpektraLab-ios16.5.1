@@ -712,6 +712,7 @@ struct EditorView: View {
                 ? model.original
                 : (showPreviousFilm ? model.previousProcessed : model.processed) {
                 GeometryReader { frame in
+                    ZStack(alignment: .topLeading) {
                     InlineZoomPreview(
                         preview: image,
                         highResolutionURL: inlineHighResolutionURL,
@@ -737,6 +738,7 @@ struct EditorView: View {
                             imageSize: current.size
                         )
                         .frame(width: frame.size.width, height: frame.size.height)
+                    }
                     }
                 }
             } else {
