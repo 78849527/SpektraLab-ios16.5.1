@@ -126,8 +126,11 @@ final class SpectralRenderer {
 
         report("转换 sRGB 并编码文件…")
         let url = try FullSizeExporter.write(output, format: format)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let bytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
         return HighResExportResult(
-            url: url, width: Int(output.width), height: Int(output.height),
+            url: url, fileFormat: format == .jpeg ? "JPEG" : "PNG", fileBytes: bytes,
+            width: Int(output.width), height: Int(output.height),
             originalWidth: frame.nativeWidth, originalHeight: frame.nativeHeight,
             elapsedMS: output.elapsed_ms
         )

@@ -16,6 +16,8 @@ enum ExportLimit: String, CaseIterable, Identifiable {
 
 struct HighResExportResult {
     let url: URL
+    let fileFormat: String
+    let fileBytes: Int64
     let width: Int
     let height: Int
     let originalWidth: Int
@@ -28,7 +30,8 @@ struct HighResExportResult {
 
     var summary: String {
         let note = reduced ? "已按内存上限缩小" : "原始像素尺寸"
-        return "\(width) × \(height) · \(note) · 光谱计算 \(String(format: "%.0f", elapsedMS)) ms"
+        let size = ByteCountFormatter.string(fromByteCount: fileBytes, countStyle: .file)
+        return "\(width) × \(height) · \(note) · \(fileFormat) \(size) · 光谱计算 \(String(format: "%.0f", elapsedMS)) ms"
     }
 }
 
