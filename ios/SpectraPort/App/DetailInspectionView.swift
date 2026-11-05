@@ -12,6 +12,17 @@ final class DetailImageScrollView: UIScrollView {
     let picture = UIImageView()
     private var intrinsicPixels: CGSize = .zero
     private var needsFit = true
+    /// When the photo-space mask overlay is active, every image replacement,
+    /// viewport resize and layout pass must remain at native aspect-fit.
+    /// Otherwise the regular photo loupe's zoom restoration can enlarge the
+    /// thumbnail when a local slider generates the next preview frame.
+    var locksZoomToFit = false {
+        didSet {
+            if locksZoomToFit && !oldValue {
+                resetToFit()
+            }
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -44,7 +55,10 @@ final class DetailImageScrollView: UIScrollView {
                       bounds.height / intrinsicPixels.height)
         minimumZoomScale = fit
         maximumZoomScale = max(1.5, fit * 12)
-        if needsFit {
+        // Compare against the *new* fitted scale: view dimensions can
+        // change as controls expand/collapse during editing.
+        if needsFit || (locksZoomToFit &&
+            abs(zoomScale - fit) > max(0.00001, fit * 0.001)) {
             resetToFit()
         } else {
             centerImage()
