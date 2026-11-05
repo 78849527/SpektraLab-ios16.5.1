@@ -40,6 +40,31 @@ final class PresetStore: ObservableObject {
         }
     }
 
+    private static func validMask(_ mask: EditMask) -> Bool {
+        guard mask.amount.isFinite, (0...1).contains(mask.amount),
+              mask.components.count <= EditMask.maxComponents else { return false }
+        let values = mask.adjustments
+        guard [values.exposure, values.contrast, values.brightness,
+               values.saturation, values.highlights, values.shadows,
+               values.blackPoint, values.whitePoint, values.temperature,
+               values.tint].allSatisfy(\.isFinite) else { return false }
+        return mask.components.allSatisfy { c in
+            // Unsupported raster masks cannot appear as silently empty regions.
+            guard c.kind != .brush else { return false }
+            let numbers: [Double] = [
+                Double(c.a.x), Double(c.a.y), Double(c.b.x), Double(c.b.y),
+                Double(c.radii.width), Double(c.radii.height),
+                c.angle, c.feather, c.low, c.high, c.softness,
+                c.tolerance, c.color.x, c.color.y, c.color.z
+            ]
+            return numbers.allSatisfy(\.isFinite) &&
+                (0...1).contains(c.feather) &&
+                (0...1).contains(c.low) &&
+                (0...1).contains(c.high) &&
+                (0...1).contains(c.softness)
+        }
+    }
+
     private static func isValid(_ s: FilmSettings) -> Bool {
         FilmCatalog.films.contains(where: { $0.id == s.filmStock }) &&
         FilmCatalog.papers.contains(where: { $0.id == s.printStock }) &&
@@ -50,6 +75,8 @@ final class PresetStore: ObservableObject {
         (-1.0...1.0).contains(s.magentaShift) &&
         (-1.0...1.0).contains(s.yellowShift) &&
         (0.0...1.0).contains(s.softness) &&
+        s.masks.count <= EditMask.maxCount &&
+        s.masks.allSatisfy(validMask) &&
         [s.exposureEV, s.grainAmount, s.halationAmount, s.printExposure,
          s.magentaShift, s.yellowShift, s.softness].allSatisfy { $0.isFinite }
     }
