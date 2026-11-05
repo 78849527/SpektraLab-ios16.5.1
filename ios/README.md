@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.9.1 / Build 12
+## Current iOS build: v0.10.0 / Build 13
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -84,6 +84,18 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - All +/- parameter buttons use >=44pt hit targets, explicit step boundaries,
   and integer-step arithmetic (avoids rounding drift for 0.05 M/Y and print
   exposure adjustments). The controls share the existing live engine bindings.
+- v0.10.0: the editor's preview surface is itself a native pan/zoom
+  UIScrollView. Pinch or double-tap automatically loads an on-demand engine
+  full-tier 12.5MP image *in place*, keeping approximately the same viewport.
+  The 1440px live preview remains the fast default. This is not a separate
+  full-screen detail view, and the full-size render is not performed after
+  every slider change. Each successful live render invalidates stale HD detail.
+- Directly save the full-tier sRGB JPEG/PNG into the iPhone Photos app using
+  PhotoKit add-only permission; no server and no need to open a share sheet.
+  The export tab offers both formats; the preview has a JPEG save shortcut.
+  User authorization is requested only when saving. When permission is denied,
+  the app reports why instead of silently failing. It retains the export file
+  for re-sharing, and never moves it when writing the Photos asset.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
