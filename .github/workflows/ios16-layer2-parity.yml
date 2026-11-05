@@ -74,6 +74,23 @@ jobs:
           grep -Fq 'maskEditing: editingMaskOnPhoto' ios/SpectraPort/App/EditorView.swift
           grep -Fq 'uiView.pinchGestureRecognizer?.isEnabled = !maskEditing' ios/SpectraPort/App/InlineZoomPreview.swift
           grep -Fq 'url = try FullSizeExporter.write(graded, format: format)' ios/SpectraPort/Engine/SpectralRenderer.swift
+      - name: Regression gate for local-preview unexpected zoom
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          view = Path("ios/SpectraPort/App/DetailInspectionView.swift").read_text()
+          bridge = Path("ios/SpectraPort/App/InlineZoomPreview.swift").read_text()
+          editor = Path("ios/SpectraPort/App/EditorView.swift").read_text()
+          assert "var locksZoomToFit = false" in view
+          assert "abs(zoomScale - fit) >" in view
+          assert "if lockToFit {" in bridge
+          assert "scroll.resetToFit()" in bridge
+          assert "lockToFit: maskEditing" in bridge
+          assert "uiView.locksZoomToFit = maskEditing" in bridge
+          assert "if !editingMaskOnPhoto { fitWholePhoto() }" in editor
+          assert "url = try FullSizeExporter.write(graded, format: format)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
+          print("LOCAL_PREVIEW_FIT_LOCK_CONTRACT_PASS")
+          PY
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
           xcrun --sdk iphoneos metal -miphoneos-version-min=16.0 \
@@ -137,15 +154,15 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta22"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "22"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta23"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "23"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta22'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '22'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta23'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '23'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版22'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版23'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -160,11 +177,11 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-MaskEdit-v0.14.2-beta.3-Build22-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-MaskEdit-v0.14.2-beta.3-Build22-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-MaskEdit-v0.14.2-beta.3-Build22-unsigned
-          path: ios/build/SpectraPort-iOS16-MaskEdit-v0.14.2-beta.3-Build22-unsigned.ipa
+          name: SpectraPort-MaskFit-v0.14.3-beta.4-Build23-unsigned
+          path: ios/build/SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa
           if-no-files-found: error

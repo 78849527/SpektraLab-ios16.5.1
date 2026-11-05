@@ -157,3 +157,20 @@ against Windows and macOS on the same image. These gates are not complete.
   normalized coordinate reversibility, long-edge unit radii, rotation and
   out-of-frame clamp boundaries. Full iPhoneOS 16 compilation also required.
 - This layout change does not claim true live A15 device verification.
+
+## Build 23 (v0.14.3 beta 4): local slider unexpectedly zooms preview
+
+- User reported that any control change in the Build22 local panel made
+  the preview thumbnail enlarge. This was a UIScrollView zoom-state regression
+  caused by replacing the preview image while preserving the old zoom factor.
+- When local/photo-space mask editing is active, install every new preview
+  at the viewport's native aspect-fit scale and never restore the previous
+  UIImage's magnification. The `DetailImageScrollView` now maintains this
+  invariant across `layoutSubviews` when controls change the viewport size.
+- Other tabs preserve the original pinch, double-tap and high-resolution
+  image inspection behaviour; the mask overlay and export code are unchanged.
+- Build23 is separately installable from user-tested Build20 and Build22.
+- Device acceptance: import image, create local radial/linear mask, move
+  local exposure, temperature and saturation sliders 10 times, confirm
+  photo never enlarges unexpectedly and handles remain precisely aligned.
+- Return to global grade: pinch zoom/double-tap must continue working.
