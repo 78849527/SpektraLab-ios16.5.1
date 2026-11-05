@@ -1,0 +1,43 @@
+name: SpectraPort
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+targets:
+  SpectraPort:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: SpectraPort/App
+      - path: SpectraPort/Engine
+      - path: SpectraPort/Bridge/Bridge.h
+        buildPhase: none
+      - path: SpectraPort/Resources/engine
+        type: folder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.twogou.SpectraPort
+        PRODUCT_NAME: SpectraPort
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_OBJC_BRIDGING_HEADER: SpectraPort/Bridge/Bridge.h
+        HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/../engine/include"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/build"
+        OTHER_LDFLAGS: "$(inherited) -lspektrafilm_engine -framework Metal -framework Foundation -framework QuartzCore -framework CoreText -framework CoreGraphics -framework Accelerate -lc++"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+    info:
+      path: SpectraPort/Info.plist
+      properties:
+        CFBundleDisplayName: SpectraPort
+        LSRequiresIPhoneOS: true
+        UIRequiredDeviceCapabilities:
+          - arm64
