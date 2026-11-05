@@ -416,6 +416,9 @@ struct EditorView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showingCamera = false
     @State private var zoomResetToken = 0
+    @State private var zoomCommand = 0
+    @State private var zoomDirection = 0
+    @State private var pendingCapture: CapturedCameraPhoto?
     @State private var showSavePreset = false
     @State private var newPresetName = ""
     @State private var copiedStatus = false
@@ -477,6 +480,18 @@ struct EditorView: View {
             showingCamera = true
         }
     }
+
+    private func fitWholePhoto() {
+        zoomCommand = 0
+        zoomDirection = 0
+        zoomResetToken += 1
+    }
+
+    private func adjustZoom(_ direction: Int) {
+        zoomDirection = direction
+        zoomCommand += 1
+    }
+
 
     private var activeFilmName: String { FilmCatalog.filmName(model.filmID) }
     private var activePaperName: String { FilmCatalog.paperName(model.paperID) }
@@ -632,158 +647,143 @@ struct EditorView: View {
         }
     }
 
+    /// Large fixed photo surface, independent of the scrolling controls.
     private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("THE DARKROOM")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .tracking(2.8)
-                    .foregroundStyle(DarkroomStyle.accent)
-                Spacer()
-                Text("SPECTRAL FILM / iOS")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .tracking(1.2)
-                    .foregroundStyle(DarkroomStyle.secondary)
+        ZStack {
+            Color.black
+
+            if let image = model.compare
+                ? model.original
+                : (showPreviousFilm ? model.previousProcessed : model.processed) {
+                GeometryReader { frame in
+                    InlineZoomPreview(
+                        preview: image,
+                        highResolutionURL: inlineHighResolutionURL,
+                        resetToken: zoomResetToken,
+                        zoomCommand: zoomCommand,
+                        zoomDirection: zoomDirection,
+                        onNeedsHighResolution: { inspectFullResolution() }
+                    )
+                    .frame(width: frame.size.width, height: frame.size.height)
+                    // Rebuild the native UIScrollView on reset. This remains
+                    // reliable even when its zoom/inset state is inconsistent
+                    // after live Core Image/Metal parameter updates.
+                    .id("source-\(model.photoSelectionVersion)-fit-\(zoomResetToken)")
+                }
+            } else {
+                VStack(spacing: 13) {
+                    Image(systemName: "camera.aperture")
+                        .font(.system(size: 49, weight: .ultraLight))
+                        .foregroundStyle(DarkroomStyle.accent)
+                    Text("让光线经过胶片")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(DarkroomStyle.primary)
+                    Text("下方「图库」选择照片，或打开「拍摄」")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
             }
 
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.black)
-
-                Group {
-                    if let image = model.compare
-                        ? model.original
-                        : (showPreviousFilm ? model.previousProcessed : model.processed) {
-                        GeometryReader { g in
-                            InlineZoomPreview(
-                                preview: image,
-                                highResolutionURL: inlineHighResolutionURL,
-                                resetToken: zoomResetToken,
-                                onNeedsHighResolution: { inspectFullResolution() }
-                            )
-                            .frame(width: g.size.width, height: g.size.height)
-                            .id(model.photoSelectionVersion)
-                        }
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "camera.aperture")
-                                .font(.system(size: 48, weight: .ultraLight))
-                                .foregroundStyle(DarkroomStyle.accent)
-                            Text("让光线经过胶片")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(DarkroomStyle.primary)
-                            Text("导入照片，使用原版光谱引擎冲印")
-                                .font(.system(size: 11))
-                                .foregroundStyle(DarkroomStyle.secondary)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    Text("预览 1440p")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.69), in: Capsule())
+                    Text(inlineHighResolutionURL == nil ? "高清 · 按需载入" : "高清 · 12.5MP")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(DarkroomStyle.accent)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.69), in: Capsule())
+                    Spacer()
+                    Button {
+                        fitWholePhoto()
+                    } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.black.opacity(0.67), in: RoundedRectangle(cornerRadius: 11))
                     }
+                    .accessibilityLabel("整张照片，适应屏幕")
+                    .disabled(model.processed == nil)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Text(model.compare ? "ORIGINAL" : (showPreviousFilm ? "PREVIOUS FILM" :
-                    (inlineHighResolutionURL == nil ? "FILM PREVIEW · PINCH TO LOAD HD" : "FULL-TIER HD DETAIL")))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .tracking(1.4)
-                    .foregroundStyle(DarkroomStyle.primary.opacity(0.9))
-                    .padding(8)
-                    .background(Color.black.opacity(0.65), in: Capsule())
-                    .padding(12)
+                Spacer()
+
+                HStack(alignment: .bottom, spacing: 8) {
+                    Button {
+                        model.compare.toggle()
+                        showPreviousFilm = false
+                    } label: {
+                        Label(model.compare ? "效果" : "原图", systemImage: "square.on.square")
+                    }
+                    .disabled(model.processed == nil)
+                    if model.previousProcessed != nil {
+                        Button {
+                            model.compare = false
+                            showPreviousFilm.toggle()
+                        } label: {
+                            Label(showPreviousFilm ? "当前" : "上次", systemImage: "rectangle.on.rectangle")
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        inspectFullResolution()
+                    } label: {
+                        Image(systemName: "sparkle.magnifyingglass")
+                    }
+                    .disabled(!canExport || inlineHighResolutionURL != nil)
+                    .accessibilityLabel("载入高清细节")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white)
+                .buttonStyle(.plain)
+                .padding(9)
+                .background(.black.opacity(0.54), in: RoundedRectangle(cornerRadius: 11))
             }
-            .frame(height: min(UIScreen.main.bounds.height * (selectedTab == .adjust ? 0.255 : 0.31), 275))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(DarkroomStyle.line))
+            .padding(10)
 
-            HStack(spacing: 10) {
-                Button {
-                    openCamera()
-                } label: {
-                    Label("拍摄", systemImage: "camera")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    VStack(spacing: 7) {
+                        Button {
+                            adjustZoom(1)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel("放大预览")
+                        Text("缩放")
+                            .font(.system(size: 9, weight: .medium))
+                        Button {
+                            adjustZoom(-1)
+                        } label: {
+                            Image(systemName: "minus")
+                        }
+                        .accessibilityLabel("缩小预览")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .buttonStyle(.plain)
+                    .frame(width: 40)
+                    .padding(.vertical, 10)
+                    .background(.black.opacity(0.70), in: Capsule())
+                    .disabled(model.processed == nil)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(DarkroomStyle.accent)
-                .disabled(model.isBusy || model.isRendering)
-
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Label(model.hasPhoto ? "更换照片" : "选择照片", systemImage: "photo.on.rectangle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(DarkroomStyle.accent)
-                .disabled(model.isBusy || model.isRendering)
-
-                Button {
-                    model.compare.toggle()
-                    showPreviousFilm = false
-                } label: {
-                    Label(model.compare ? "效果" : "原图", systemImage: "square.on.square")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(DarkroomStyle.accent)
-                .disabled(model.processed == nil || model.isBusy)
-
-                Button {
-                    model.compare = false
-                    showPreviousFilm.toggle()
-                } label: {
-                    Label(showPreviousFilm ? "当前" : "上次", systemImage: "rectangle.on.rectangle")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(DarkroomStyle.accent)
-                .disabled(model.previousProcessed == nil || model.isBusy)
+                Spacer()
+                    .frame(height: 49)
             }
-            HStack(spacing: 9) {
-                Button {
-                    zoomResetToken += 1
-                } label: {
-                    Label("整张", systemImage: "arrow.down.right.and.arrow.up.left")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.bordered)
-                .tint(DarkroomStyle.accent)
-                .disabled(model.processed == nil)
-
-                Button {
-                    inspectFullResolution()
-                } label: {
-                    Label(inlineHighResolutionURL == nil ? "加载高清" : "高清已载入",
-                          systemImage: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.bordered)
-                .tint(DarkroomStyle.accent)
-                .disabled(!canExport || inlineHighResolutionURL != nil)
-
-                Button {
-                    saveToPhotoLibrary(.jpeg)
-                } label: {
-                    Label(savingToPhotos ? "保存中…" : "保存相册",
-                          systemImage: "square.and.arrow.down")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(DarkroomStyle.accent)
-                .disabled(!canExport)
-            }
-
-            Text(inlineHighResolutionURL == nil
-                 ? "直接在照片上双指缩放或双击：自动载入最高 12.5MP 的真实光谱图。"
-                 : "高清图已在当前预览中加载，可继续缩放、拖动并调整查看区域。")
-                .font(.system(size: 10))
-                .foregroundStyle(DarkroomStyle.secondary)
-            if !photoSaveFeedback.isEmpty {
-                Text(photoSaveFeedback)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(DarkroomStyle.accent)
-            }
+            .padding(.trailing, 13)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15)
+            .stroke(DarkroomStyle.line, lineWidth: 1))
     }
 
     private var filmSection: some View {
@@ -1222,35 +1222,93 @@ struct EditorView: View {
         .padding(.horizontal, 4)
     }
 
-    private var tabs: some View {
-        HStack(spacing: 3) {
-            ForEach(EditorTab.allCases, id: \.self) { tab in
+    private var editorSections: some View {
+        HStack(spacing: 4) {
+            ForEach([EditorTab.film, .paper, .adjust, .presets], id: \.self) { tab in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
                         selectedTab = tab
                     }
                 } label: {
                     VStack(spacing: 5) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 16, weight: .medium))
                         Text(tab.rawValue)
                             .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .medium))
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(selectedTab == tab ? DarkroomStyle.accent : Color.clear)
-                            .frame(height: 2)
                     }
-                    .foregroundStyle(selectedTab == tab ? DarkroomStyle.accent : DarkroomStyle.secondary)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(selectedTab == tab
+                                     ? DarkroomStyle.background : DarkroomStyle.primary)
+                    .frame(maxWidth: .infinity, minHeight: 49)
+                    .background(
+                        selectedTab == tab ? DarkroomStyle.accent : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(tab.rawValue + "菜单")
             }
         }
-        .padding(.horizontal, 15)
-        .padding(.top, 9)
-        .padding(.bottom, 6)
-        .background(DarkroomStyle.surface)
+        .padding(5)
+        .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 15))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+    }
+
+    private var bottomNavigation: some View {
+        HStack(spacing: 0) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                navigationIcon("图库", symbol: "photo")
+            }
+            .disabled(model.isBusy || model.isRendering)
+
+            Button {
+                openCamera()
+            } label: {
+                navigationIcon("拍摄", symbol: "camera")
+            }
+            .disabled(model.isBusy || model.isRendering)
+
+            Button {
+                selectedTab = .adjust
+            } label: {
+                navigationIcon("编辑", symbol: "slider.horizontal.3", selected:
+                    selectedTab == .adjust || selectedTab == .film || selectedTab == .paper)
+            }
+
+            Button {
+                selectedTab = .presets
+            } label: {
+                navigationIcon("预设", symbol: "square.stack",
+                               selected: selectedTab == .presets)
+            }
+
+            Button {
+                selectedTab = .export
+            } label: {
+                navigationIcon("更多", symbol: "ellipsis",
+                               selected: selectedTab == .export)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(height: 60)
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .background(
+            DarkroomStyle.background
+                .overlay(alignment: .top) { DarkroomStyle.line.frame(height: 1) }
+        )
+    }
+
+    private func navigationIcon(_ name: String, symbol: String,
+                                selected: Bool = false) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .medium))
+            Text(name)
+                .font(.system(size: 10, weight: selected ? .semibold : .medium))
+        }
+        .foregroundStyle(selected ? DarkroomStyle.accent : DarkroomStyle.secondary)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .contentShape(Rectangle())
     }
 
     private var quickAdjustmentPanel: some View {
@@ -1354,83 +1412,69 @@ struct EditorView: View {
         }
     }
 
-    private var bottomBar: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.isRendering ? "渲染中" : (model.isDirty ? "待更新" : "光谱引擎"))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(model.isDirty ? DarkroomStyle.accent : DarkroomStyle.primary)
-                Text(model.lastElapsedMS.map { String(format: "%.0f ms", $0) } ?? "81 波长 · Metal")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(DarkroomStyle.secondary)
-            }
-            .frame(minWidth: 94, alignment: .leading)
-
-            Button {
-                model.applySettings()
-            } label: {
-                HStack(spacing: 8) {
-                    if model.isBusy {
-                        ProgressView().tint(DarkroomStyle.background)
-                    } else {
-                        Image(systemName: model.isDirty ? "wand.and.stars" : "arrow.clockwise")
-                    }
-                    Text(model.isDirty ? "立即预览" : "重新渲染")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(DarkroomStyle.background)
-            .background(
-                model.isBusy ? DarkroomStyle.secondary : DarkroomStyle.accent,
-                in: RoundedRectangle(cornerRadius: 12)
-            )
-            .disabled(model.isBusy || model.isRendering || !model.hasPhoto || model.filmID.isEmpty || model.paperID.isEmpty)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            DarkroomStyle.background
-                .overlay(alignment: .top) { DarkroomStyle.line.frame(height: 1) }
-        )
-    }
-
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                tabs
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    previewSection
+                        .frame(height: max(220, geometry.size.height * 0.615))
+                        .padding(.horizontal, 10)
+                        .padding(.top, 6)
+                        .padding(.bottom, 2)
 
-                previewSection
-                    .padding(.horizontal, 15)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
+                    editorSections
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 10) {
-                        activePanel
-                        statusSection
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if !model.realtimeEnabled || model.isDirty {
+                                Button {
+                                    model.applySettings()
+                                } label: {
+                                    Label("应用调整", systemImage: "wand.and.stars")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(DarkroomStyle.accent)
+                                .disabled(model.isBusy || model.isRendering || !model.hasPhoto)
+                            }
+                            activePanel
+                            statusSection
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.bottom, 18)
                     }
-                    .padding(.horizontal, 15)
-                    .padding(.top, 6)
-                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(DarkroomStyle.background)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(DarkroomStyle.background.ignoresSafeArea())
-            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+            .safeAreaInset(edge: .bottom, spacing: 0) { bottomNavigation }
             .navigationTitle("SpectraPort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: onBack) {
-                        Label("返回诊断", systemImage: "chevron.left")
+                        Image(systemName: "film.stack")
                     }
+                    .accessibilityLabel("返回诊断")
                     .foregroundStyle(DarkroomStyle.accent)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(copiedStatus ? "已复制" : "复制状态") { copyStatus() }
-                        .foregroundStyle(DarkroomStyle.accent)
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        copyStatus()
+                    } label: {
+                        Image(systemName: copiedStatus ? "checkmark.circle" : "info.circle")
+                    }
+                    .accessibilityLabel("复制诊断状态")
+
+                    Button {
+                        selectedTab = .export
+                    } label: {
+                        Label("导出", systemImage: "square.and.arrow.up")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DarkroomStyle.accent)
                 }
             }
             .toolbarBackground(DarkroomStyle.background, for: .navigationBar)
@@ -1439,15 +1483,17 @@ struct EditorView: View {
                 clearInlineHighResolution()
                 photoSaveFeedback = ""
                 model.importPhoto($0)
+                selectedTab = .adjust
             }
             .onChange(of: model.photoSelectionVersion) { _ in
                 clearInlineHighResolution()
-                zoomResetToken += 1
+                fitWholePhoto()
                 photoSaveFeedback = ""
             }
             .onChange(of: model.previewSequence) { _ in
                 showPreviousFilm = false
                 clearInlineHighResolution()
+                fitWholePhoto()
             }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
@@ -1478,10 +1524,16 @@ struct EditorView: View {
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
             }
-            .fullScreenCover(isPresented: $showingCamera) {
-                StableSpectraCameraView { capture in
-                    showingCamera = false
+            .fullScreenCover(isPresented: $showingCamera, onDismiss: {
+                if let capture = pendingCapture {
+                    pendingCapture = nil
                     model.importCameraCapture(capture)
+                    selectedTab = .adjust
+                }
+            }) {
+                StableSpectraCameraView { capture in
+                    pendingCapture = capture
+                    showingCamera = false
                 }
             }
 
