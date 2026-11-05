@@ -216,6 +216,8 @@ func meanCentralRGB(_ image: CGImage) -> SIMD3<Double> {
     ) else { fatalError("JPEG/PNG test context unavailable") }
     ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
     let mid = (2 * width + 2) * 4
+    let meta = "PNG/JPEG decode: alphaInfo=\(image.alphaInfo.rawValue), bpc=\(image.bitsPerComponent), colorSpace=\(String(describing: image.colorSpace?.name)), centerRGBA=\(bytes[mid]),\(bytes[mid+1]),\(bytes[mid+2]),\(bytes[mid+3])\n"
+    FileHandle.standardError.write(Data(meta.utf8))
     return SIMD3<Double>(
         Double(bytes[mid]) / 255,
         Double(bytes[mid+1]) / 255,
