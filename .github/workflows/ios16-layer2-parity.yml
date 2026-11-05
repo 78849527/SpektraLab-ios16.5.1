@@ -36,3 +36,15 @@ jobs:
             -o /tmp/spectraport-layer2-model-tests
       - name: Run parity model tests
         run: /tmp/spectraport-layer2-model-tests
+      - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
+        run: |
+          xcrun --sdk iphoneos metal -miphoneos-version-min=16.0 \
+            -fmetal-math-mode=safe -fmetal-math-fp32-functions=precise \
+            -Werror -c modern_UI/Spektrafilm/Spektrafilm/Canvas/Shaders.metal \
+            -o /tmp/spectraport-original-layer2-ios16.air
+          test -s /tmp/spectraport-original-layer2-ios16.air
+      - name: Link original Layer2 shader into an iOS Metal library
+        run: |
+          xcrun --sdk iphoneos metallib /tmp/spectraport-original-layer2-ios16.air \
+            -o /tmp/spectraport-original-layer2.metallib
+          test -s /tmp/spectraport-original-layer2.metallib
