@@ -546,6 +546,8 @@ struct EditorView: View {
         Mac Layer2 curves: \(model.grade.curves.isIdentity ? "identity" : "custom")
         Mac Layer2 local masks: \(model.masks.count)
         Mac Layer2 GPU kernel: original macOS Shaders.metal::layer2
+        Parity beta: v0.14.0 beta.1 · Build 20 · separate bundle
+        Layer2 export safety: 6MP only, 12.5MP gated until device memory validation
         Input digital softness: \(String(format: "%.2f", model.softness))
         Softness stage: Core Image pre-film (independent of original C++ engine)
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")

@@ -3,7 +3,7 @@ import SwiftUI
 /// Stored locally. Changing this does not interrupt the current edit;
 /// the selection takes effect on the next cold start of SpectraPort.
 struct StartupSettingsView: View {
-    @AppStorage("spectraport.startup.destination") private var destination = "camera"
+    @AppStorage("spectraport.startup.destination") private var destination = "editor"
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -18,7 +18,7 @@ struct StartupSettingsView: View {
                                 .font(.system(size: 19))
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("启动进入拍摄").font(.system(size: 16, weight: .medium))
-                                Text("默认 · 使用完整 iOS 系统相机")
+                                Text("使用完整 iOS 系统相机")
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                             }
@@ -40,7 +40,7 @@ struct StartupSettingsView: View {
                                 .font(.system(size: 19))
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("启动进入编辑").font(.system(size: 16, weight: .medium))
-                                Text("直接显示胶片、相纸与参数面板")
+                                Text("测试版默认 · 直接进入编辑和调色")
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                             }

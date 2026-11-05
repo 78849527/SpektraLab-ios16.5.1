@@ -157,6 +157,15 @@ final class SpectralRenderer {
         limit: ExportLimit,
         report: (String) -> Void
     ) throws -> HighResExportResult {
+        // Beta safety gate: two 12.5MP RGBA16 textures, native spectral
+        // buffers, readback and export staging can exceed the A15-class
+        // working memory limit. Validate 6MP on device before 12.5MP.
+        if needsDesktopLayer2(settings) && limit == .high {
+            throw PortError.message(
+                "调色测试版暂时仅支持安全档 6MP 导出。请在更多→导出中切换安全档，12.5MP 将在真机内存测试后开放。"
+            )
+        }
+
         // The preview's native caches can be large. Release them *before*
         // decoding the high-resolution frame. A later Apply opens preview
         // again, but the currently shown UIImage stays on screen.
