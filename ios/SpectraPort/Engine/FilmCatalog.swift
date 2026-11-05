@@ -105,6 +105,20 @@ struct FilmSettings: Equatable, Codable {
         ) ?? []
     }
 
+    /// Layer 2 adjustments and local masks are strictly post-print.
+    /// Do not send their changes to the original spectral engine.
+    func samePhysicalPrint(as other: FilmSettings) -> Bool {
+        filmStock == other.filmStock &&
+        printStock == other.printStock &&
+        exposureEV == other.exposureEV &&
+        grainAmount == other.grainAmount &&
+        halationAmount == other.halationAmount &&
+        printExposure == other.printExposure &&
+        magentaShift == other.magentaShift &&
+        yellowShift == other.yellowShift &&
+        softness == other.softness
+    }
+
     func deltaJSON(striped: Bool = false) throws -> String {
         // These exact field names and ranges come from engine/src/core/params.cpp.
         // Keep colour-management fields identical to the successful v0.2.1 path.
