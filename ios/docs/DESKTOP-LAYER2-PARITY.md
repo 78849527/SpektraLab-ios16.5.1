@@ -1,10 +1,18 @@
 # iOS ↔ desktop Layer 1 / Layer 2 parity contract
 
-**Status:** feature-branch groundwork. This document and the Swift math
-models do **not** imply that tone curves, colour grading, or masks are
-already visible or applied in the iOS editor. The shipping v0.13.0 renderer
-continues to use the original C++/Metal engine, without the desktop Layer 2
-post-print GPU pass.
+**Status (feature branch):** the original macOS curves, adjustments
+and complete local-mask *models*, and the unmodified Shaders.metal::layer2
+kernel, now compile for iPhoneOS 16. The iOS branch connects Layer 2 to
+**both** the 1440-pixel realtime preview and its full-resolution JPEG/PNG
+export, with all-identity bypass, the original five-channel curve LUT,
+four-zone colour balance and analytical linear/radial/luminance local masks.
+A cached copy of the original 16-bit ProPhoto print prevents unrelated
+Layer 2 edits from reopening or reprinting the 81-wavelength negative.
+
+**The released v0.13.0 Build 19 is unchanged.** Branch builds are not a
+shipping quality or physical-device validation. Do not release the branch
+without tests on the actual A15 iPhone at 6MP and 12.5MP, cross-platform
+pixel comparisons, and memory/thermal validation.
 
 ## Three distinct targets
 
@@ -60,3 +68,45 @@ post-print GPU pass.
 This branch deliberately does not publish a replacement IPA until the layer
 is connected end-to-end and cross-platform fixtures pass. The existing
 `port/ios16-native-engine` release remains safe.
+
+## Implemented on the feature branch
+
+- `Engine/DesktopCurveMath.swift` — desktop monotone cubic interpolation,
+  five 256-element LUT rows; a touch curve UI with endpoint constraints.
+- `Engine/DesktopAdjustments.swift` — exact Mac 16-bit encoded ROMM post-print
+  controls, including colour balance. A touch colour wheel edits the same
+  `ColorZone` values as macOS.
+- `Engine/DesktopMasks.swift` — exact macOS EditMask and component models.
+  The iOS GPU adapter packs original `MaskUniform` structs for linear,
+  radial, luminance and colour analytic masks. The iPhone UI currently offers
+  **linear, radial and luminance**; a colour-range picker is not ready.
+  Brush is explicitly rejected (its raster texture is not yet implemented).
+- `DesktopLayer2Processor.swift` binds original Mac `layer2` Metal entry
+  point with identical uniform layout and 5-channel curve texture. MaskCount
+  and mask data are supplied rather than ignored. Neutral Layer 2 retains
+  original bytes without an unnecessary GPU round-trip.
+- `SpectralRenderer` keeps immutable RGBA16 native print bytes on the preview
+  queue. If physical print parameters are unchanged, grade/curve/local edits
+  reuse the cached print. Native print/exposure/grain/halation changes still
+  call the original C++ engine.
+- Existing saves decode missing `adjustments` and `masks` as neutral/empty.
+  Settings snapshots and preset serialization carry Mac-compatible edits.
+
+## Automated checks
+
+The branch-only GitHub Actions workflow:
+1. compares the copied Mac Swift source byte-for-byte, except documented
+   imports/helpers, and verifies historical presets decode to neutral;
+2. compiles the **original** Mac Metal kernel for the iPhoneOS 16 SDK;
+3. builds the full original C++ spectral engine plus the iOS Swift app and
+   checks the extra post-print metallib is in the bundle;
+4. runs a conditional macOS Metal pixel-fixture executable: identity, +1 EV,
+   red-curve adjustment, radial and linear mask selection, and four-zone
+   colour balance. If the hosted Mac exposes no Metal GPU, it explicitly
+   reports `SKIPPED_GPU_RUNTIME`, **not** a GPU test pass.
+
+Remaining acceptance gates: verify GPU fixtures actually execute; inspect
+high-resolution A15 peak memory and exports; add interactive colour-range
+selection and brush rasterisation or visibly mark unsupported; compare
+ProPhoto/D65 transforms and matched default/autoexposure/filter parameters
+against Windows and macOS on the same image. These gates are not complete.
