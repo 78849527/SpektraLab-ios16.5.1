@@ -43,7 +43,7 @@ targets:
       path: SpectraPort/Info.plist
       properties:
         CFBundleDisplayName: SpectraPort
-        NSCameraUsageDescription: "用于在 SpectraPort 内拍摄照片并直接进行本地胶片模拟处理。"
+        NSCameraUsageDescription: "需要访问 iPhone 摄像头以在 SpectraPort 内拍照并本机修图。"
         NSPhotoLibraryAddUsageDescription: "仅用于将你编辑后的 JPEG 或 PNG 照片保存到 iPhone 相册，不读取其他照片。"
         LSRequiresIPhoneOS: true
         UIRequiredDeviceCapabilities:

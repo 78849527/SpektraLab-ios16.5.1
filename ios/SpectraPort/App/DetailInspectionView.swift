@@ -72,6 +72,7 @@ final class DetailImageScrollView: UIScrollView {
                       bounds.height / intrinsicPixels.height)
         minimumZoomScale = fit
         maximumZoomScale = max(1.5, fit * 12)
+        needsFit = false // avoid reentrant layout trying to refit twice
         setZoomScale(fit, animated: animated)
         centerImage()
         if !animated {
