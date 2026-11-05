@@ -1549,7 +1549,11 @@ struct EditorView: View {
                 } else if gradeSubsection == .balance {
                     MobileColorBalanceEditor(colorBalance: $model.grade.colorBalance)
                 } else {
-                    MobileLocalMaskEditor(masks: $model.masks)
+                    MobileLocalMaskEditor(
+                        masks: $model.masks,
+                        imageAspectRatio: CGFloat(model.processed?.size.width ?? 1) /
+                            max(1, CGFloat(model.processed?.size.height ?? 1))
+                    )
                 }
             }
         }
