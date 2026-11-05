@@ -8,6 +8,7 @@ import UIKit
 struct InlineZoomPreview: UIViewRepresentable {
     let preview: UIImage
     let highResolutionURL: URL?
+    let resetToken: Int
     let onNeedsHighResolution: () -> Void
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
@@ -17,6 +18,7 @@ struct InlineZoomPreview: UIViewRepresentable {
         var highResolutionReady = false
         var onNeedsHighResolution: (() -> Void)?
         var updatingProgrammatically = false
+        var lastResetToken: Int?
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             (scrollView as? DetailImageScrollView)?.picture
@@ -38,7 +40,7 @@ struct InlineZoomPreview: UIViewRepresentable {
         @objc func doubleTap(_ recognizer: UITapGestureRecognizer) {
             guard let scroll else { return }
             if scroll.zoomScale > scroll.minimumZoomScale * 1.5 {
-                scroll.setZoomScale(scroll.minimumZoomScale, animated: true)
+                scroll.resetToFit(animated: true)
                 return
             }
             if !highResolutionReady, let id = loadedID, requestedForID != id {
@@ -116,6 +118,14 @@ struct InlineZoomPreview: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onNeedsHighResolution = onNeedsHighResolution
         let identifier = highResolutionURL?.path ?? "preview:\(ObjectIdentifier(preview))"
+        if coordinator.lastResetToken != resetToken {
+            coordinator.lastResetToken = resetToken
+            // If the image also changed, install it first; then reset.
+            if coordinator.loadedID == identifier {
+                uiView.resetToFit()
+                return
+            }
+        }
         guard coordinator.loadedID != identifier else { return }
         if let url = highResolutionURL,
            let highRes = UIImage(contentsOfFile: url.path) {
