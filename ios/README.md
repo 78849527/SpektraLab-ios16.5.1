@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.6.0 / Build 7
+## Current iOS build: v0.7.0 / Build 8
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -37,6 +37,11 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   tracks the six most recently used film-paper pairs locally without cloud storage.
 - Last-export metadata includes output file format and actual byte size. The
   current editing session can re-share its most recent file without re-rendering.
+- iOS 16 darkroom UI: horizontal swipeable film cards (filter by brand or cine),
+  dropdown list for all film stocks and measured papers, expandable parameter
+  sections, precise slider +/- controls, and persistent bottom Apply action.
+- The original C++20 and Metal spectral code, session cache, preset storage,
+  export file sharing, and 6MP/12.5MP full-tier flow are unchanged.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
