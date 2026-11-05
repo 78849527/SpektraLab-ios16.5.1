@@ -48,35 +48,35 @@ jobs:
           test ! -f ios/SpectraPort/App/SpectraCameraView.swift
           test ! -f ios/SpectraPort/Engine/RawImageDeveloper.swift
           grep -q "picker.showsCameraControls = true" ios/SpectraPort/App/StableSpectraCameraView.swift
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "17"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "18"
           otool -L "$APP/SpectraPort"
       - name: Package unsigned RELEASE IPA for manual signing
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpectraPort-ios16-v0.12.1-native-system-camera-unsigned.ipa Payload
+          zip -q -r ../SpectraPort-ios16-v0.12.2-preview-apply-unsigned.ipa Payload
       - name: Upload device build
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-ios16-v0.12.1-native-system-camera-unsigned
-          path: ios/build/SpectraPort-ios16-v0.12.1-native-system-camera-unsigned.ipa
+          name: SpectraPort-ios16-v0.12.2-preview-apply-unsigned
+          path: ios/build/SpectraPort-ios16-v0.12.2-preview-apply-unsigned.ipa
           if-no-files-found: error
       - name: Publish public IPA download (unofficial prerelease)
         if: github.event_name == 'push' && github.ref == 'refs/heads/port/ios16-native-engine'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FILE="ios/build/SpectraPort-ios16-v0.12.1-native-system-camera-unsigned.ipa"
-          TAG="ios16-v0.12.1"
+          FILE="ios/build/SpectraPort-ios16-v0.12.2-preview-apply-unsigned.ipa"
+          TAG="ios16-v0.12.2"
           test -s "$FILE"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$FILE" --clobber
           else
             gh release create "$TAG" "$FILE" \
               --target "$GITHUB_SHA" \
-              --title "SpectraPort iOS 16 v0.12.1 (unofficial test)" \
-              --notes "Unofficial iOS 16 test port based on SpektraLab. Use the entire native iOS UIImagePickerController camera UI with system framing, shutter, retake, confirm and cancel, no custom top/bottom overlays. Delete the unstable custom AVFoundation RAW/ProRAW camera implementation and RAW developer. JPEG photo returns straight to the existing spectral editor. Retains photo-first darkroom UI and serial GPU cache release. The IPA is unsigned and requires manual signing. Not yet validated on all iPhone hardware." \
+              --title "SpectraPort iOS 16 v0.12.2 (unofficial test)" \
+              --notes "Unofficial iOS 16 test port based on SpektraLab. Moves the Apply Adjustments button to a fixed floating overlay inside the photo preview, eliminating dynamic insertion/removal from the lower scrollable controls and preventing slider-panel jumping. Retains the system camera, darkroom layout, original spectral engine and local high-res export. The IPA is unsigned and requires manual signing. Not yet validated on all iPhone hardware." \
               --prerelease
           fi
           gh release view "$TAG" --json url -q .url

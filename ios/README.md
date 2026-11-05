@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.12.1 / Build 17
+## Current iOS build: v0.12.2 / Build 18
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -116,6 +116,11 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - Photo preview has an explicit "整张" fit-to-frame button (scale + center)
   and double-tap restore, with no bouncing below minimum zoom. Camera and
   Photos-picker source changes also reset the embedded viewer.
+- v0.12.2: the yellow Apply Adjustments action is now a fixed-position
+  floating button within the photo preview (upper-right, beneath fit-to-frame).
+  It appears only for unapplied edits or when automatic preview is off. The
+  adjustment ScrollView no longer inserts a transient row, so sliders and
+  panel scroll offset remain stable through live parameter changes.
 - v0.12.1 simplifies capture: iOS owns the *entire* native
   UIImagePickerController camera screen, including framing, shutter,
   flash (when available), Cancel, Retake and Use Photo. No custom overlays,

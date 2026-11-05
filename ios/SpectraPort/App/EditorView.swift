@@ -416,6 +416,11 @@ struct EditorView: View {
         FilmCatalog.papers.filter { paperFilter.accepts($0) }
     }
 
+    // Overlay visibility never changes the controls panel's height or offset.
+    private var needsManualApply: Bool {
+        model.hasPhoto && (!model.realtimeEnabled || model.isDirty)
+    }
+
     private var canExport: Bool {
         !model.isBusy && !model.isRendering && !model.isDirty &&
         !savingToPhotos && model.processed != nil
@@ -679,6 +684,32 @@ struct EditorView: View {
                     .accessibilityLabel("整张照片，适应屏幕")
                     .disabled(model.processed == nil)
                 }
+
+                // Fixed overlay inside the photo surface. Changing exposure,
+                // softness or halation must not insert/remove any row from
+                // the lower editor ScrollView and shift its sliders.
+                HStack {
+                    Spacer()
+                    Button {
+                        model.applySettings()
+                    } label: {
+                        Label("应用调整", systemImage: "wand.and.stars")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DarkroomStyle.background)
+                            .padding(.horizontal, 13)
+                            .frame(height: 38)
+                            .background(
+                                DarkroomStyle.accent,
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isBusy || model.isRendering || !model.hasPhoto)
+                    .opacity(needsManualApply ? 1 : 0)
+                    .allowsHitTesting(needsManualApply)
+                    .accessibilityHidden(!needsManualApply)
+                }
+                .padding(.top, 8)
 
                 Spacer()
 
@@ -1386,17 +1417,6 @@ struct EditorView: View {
 
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 10) {
-                            if !model.realtimeEnabled || model.isDirty {
-                                Button {
-                                    model.applySettings()
-                                } label: {
-                                    Label("应用调整", systemImage: "wand.and.stars")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(DarkroomStyle.accent)
-                                .disabled(model.isBusy || model.isRendering || !model.hasPhoto)
-                            }
                             activePanel
                             statusSection
                         }
