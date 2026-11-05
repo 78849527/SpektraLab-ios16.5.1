@@ -118,3 +118,20 @@ high-resolution A15 peak memory and exports; add interactive colour-range
 selection and brush rasterisation or visibly mark unsupported; compare
 ProPhoto/D65 transforms and matched default/autoexposure/filter parameters
 against Windows and macOS on the same image. These gates are not complete.
+
+## Build 21 (0.14.1 beta 2): memory-bounded export and device rollout
+
+- Keep prior Build 20 unchanged. Build 21 has a distinct bundle identifier,
+  allowing Build 19, Build 20 and Build 21 to coexist for testing.
+- Full-size graded JPEG/PNG goes from the original Layer2 output Metal
+  texture directly into CIImage(mtlTexture:options:) with ROMM colour
+  tagging and a Metal-device Core Image context. This avoids the entire
+  8-bytes/pixel GPU-to-CPU readback and 16-bit CGImage allocation
+  (approximately 48MB at 6MP and 100MB at 12.5MP).
+- Preview still uses the proven readback path; native C++ optical-film
+  simulation and original desktop Metal shader are unchanged.
+- Build21's same-source GPU JPEG and PNG pixel fixtures must pass on CI.
+- The 12.5MP post-print export tier remains disabled pending A15 memory
+  validation. Do not interpret a Mac-runner pass as iPhone stability.
+- Test 6MP JPEG and PNG with global grade, RGB curves and radial mask,
+  then try five repeated exports. Compare results with Build20.

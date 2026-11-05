@@ -196,7 +196,7 @@ func verifiedExport(_ jpeg: Bool) throws -> CGImage {
     }
     check(image.width == width && image.height == height,
           "encoded image is not cropped or wrongly oriented")
-    check((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) ?? 0 > 0,
+    check(((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0,
           "encoded file is nonempty")
     return image
 }
