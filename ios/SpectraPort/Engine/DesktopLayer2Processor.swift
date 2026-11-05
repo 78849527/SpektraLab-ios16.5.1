@@ -143,22 +143,32 @@ final class DesktopLayer2Processor {
               !activeMasks.isEmpty else {
             throw PortError.message("中性调色请使用原版光谱高清导出路径")
         }
-        let dst = try renderTexture(
-            raw: raw, width: width, height: height,
-            rowStridePixels: rowStridePixels, adjustments: adjustments,
-            activeMasks: activeMasks)
-        guard let sampled = CIImage(
-            mtlTexture: dst, options: [.colorSpace: romm]
-        ) else {
-            throw PortError.message("无法将 Metal 输出纹理交给 Core Image")
+        // CIContext's GPU-to-JPEG writer keeps the original RGB pixels and
+        // produces the expected opaque file without a whole-frame readback.
+        // Its PNG writer currently serializes the same Metal source as a
+        // transparent-black image on the CI macOS runner. Preserve the
+        // pre-Build21 16-bit CGImage PNG path instead of shipping corrupt PNGs.
+        // This intentionally optimizes JPEG first; PNG is still safe but
+        // needs its original 8-bytes-per-pixel CPU staging copy.
+        let image: CIImage
+        if jpeg {
+            let dst = try renderTexture(
+                raw: raw, width: width, height: height,
+                rowStridePixels: rowStridePixels, adjustments: adjustments,
+                activeMasks: activeMasks)
+            guard let sampled = CIImage(
+                mtlTexture: dst, options: [.colorSpace: romm]
+            ) else {
+                throw PortError.message("无法将 Metal JPEG 输出交给 Core Image")
+            }
+            image = sampled.settingAlphaOne(in: sampled.extent)
+        } else {
+            let rendered = try apply(
+                raw: raw, width: width, height: height,
+                rowStridePixels: rowStridePixels, adjustments: adjustments,
+                masks: masks)
+            image = CIImage(cgImage: rendered)
         }
-        // Source photographs and the untouched desktop Metal layer2 shader
-        // are fully opaque. Core Image's Metal-texture adaptor can report
-        // alpha=0 when encoding PNG, despite the shader writing float4(c,1).
-        // JPEG drops alpha and hid this bug. Enforce the known-opaque
-        // contract *on the GPU*, before either image encoder receives it.
-        // This prevents transparent-black PNGs with no RGBA16 CPU readback.
-        let image = sampled.settingAlphaOne(in: sampled.extent)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SpectraPort-layer2-GPU-" + UUID().uuidString)
             .appendingPathExtension(jpeg ? "jpg" : "png")
