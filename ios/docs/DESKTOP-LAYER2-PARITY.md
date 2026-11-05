@@ -20,10 +20,14 @@ pixel comparisons, and memory/thermal validation.
    Metal shaders and measured film/paper profiles. On all platforms verify
    the identical source image linearization, white point, input colour space,
    parameter JSON, active/default values, rendering mode and print output.
-   The iOS port currently fixes `product_defaults=true`,
-   `filter_shift_scale=40` and a user-tunable pre-film softness, which means
-   default desktop equivalence is NOT established. Compare with the *actual*
-   desktop API requests rather than hardcoding guessed defaults.
+   Source verification confirms the macOS frontend *also* sends
+   `product_defaults=true` and a 40-CC filter scale
+   (`FilmParams.filterShiftCC`), matching iOS; these two fields were not
+   divergences. The desktop "Print Brightness" slider is in stops and sends
+   `print_exposure = 2^(-EV)`; iOS now shows the same EV interpretation
+   while retaining the historic serialized enlarger exposure ratio. Pre-film
+   softening is an iOS-only optional stage and must be disabled for exact
+   source parity. Full baseline output equivalence is still unproven.
 2. **Layer 2 / scan adjustments:** reuse exact Mac
    `Model/Adjustments.swift`, `Model/CurveMath.swift`,
    `Model/Mask.swift` data models, with `Canvas/Shaders.metal::layer2`
@@ -79,7 +83,9 @@ is connected end-to-end and cross-platform fixtures pass. The existing
 - `Engine/DesktopMasks.swift` — exact macOS EditMask and component models.
   The iOS GPU adapter packs original `MaskUniform` structs for linear,
   radial, luminance and colour analytic masks. The iPhone UI currently offers
-  **linear, radial and luminance**; a colour-range picker is not ready.
+  **linear, radial, luminance and colour**; the iOS colour picker converts
+  sRGB user selections to native ROMM/ProPhoto channel values. Sampling
+  colours *directly* from the photo is not implemented yet.
   Brush is explicitly rejected (its raster texture is not yet implemented).
 - `DesktopLayer2Processor.swift` binds original Mac `layer2` Metal entry
   point with identical uniform layout and 5-channel curve texture. MaskCount
@@ -89,6 +95,8 @@ is connected end-to-end and cross-platform fixtures pass. The existing
   queue. If physical print parameters are unchanged, grade/curve/local edits
   reuse the cached print. Native print/exposure/grain/halation changes still
   call the original C++ engine.
+- Same desktop-to-wire print brightness mapping: `print_exposure=2^(-EV)`.
+  The UI exposes EV; original direct-ratio presets remain compatible.
 - Existing saves decode missing `adjustments` and `masks` as neutral/empty.
   Settings snapshots and preset serialization carry Mac-compatible edits.
 

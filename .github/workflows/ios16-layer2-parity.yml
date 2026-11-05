@@ -25,7 +25,20 @@ jobs:
           mask = Path("ios/SpectraPort/Engine/DesktopMasks.swift").read_text()
           assert adjust == "// Unmodified macOS Adjustments.swift. The shared Layer2Uniforms.tone()\n// implementation now comes from the unmodified desktop Mask.swift.\n" + (root / "Adjustments.swift").read_text()
           assert mask == "// Unmodified macOS Mask.swift (the source also owns shared tone arithmetic).\n" + (root / "Mask.swift").read_text()
-          print("Mac curves, grading and mask models match upstream exactly")
+          # Confirm the iOS physical print controls use the same CC scale and
+          # product default intent as the actual macOS app, not a guessed value.
+          mac_params = (root / "Params.swift").read_text()
+          mac_session = (root / "Session.swift").read_text()
+          ios_settings = Path("ios/SpectraPort/Engine/FilmCatalog.swift").read_text()
+          ios_editor = Path("ios/SpectraPort/App/EditorView.swift").read_text()
+          assert "static let filterShiftCC: Double = 40" in mac_params
+          assert '"filter_shift_scale": 40.0' in ios_settings
+          assert 'delta["product_defaults"] = .bool(true)' in mac_session
+          assert '"product_defaults": true' in ios_settings
+          assert "static func printExposure(stops: Double)" in mac_params
+          assert "pow(2.0, -stops)" in mac_params
+          assert "model.printExposure = pow(2, -stops)" in ios_editor
+          print("Mac curves, grading, masks and shared print defaults match upstream")
           PY
       - name: Compile desktop source-matched Swift models
         run: |

@@ -105,4 +105,16 @@ let changedPhysical = FilmSettings(
 )
 expect(!stock.samePhysicalPrint(as: changedPhysical),
        "negative/exposure changes must invalidate spectral cache")
-print("Verified: Mac curves, grading, mask packing, old presets and spectral cache isolation")
+// CGColorSpace colour selection round-trip matches macOS ROMM mask space.
+let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+let rommSpace = CGColorSpace(name: CGColorSpace.rommrgb)!
+let userColor = CGColor(colorSpace: srgb, components: [0.75, 0.35, 0.2, 1])!
+let working = userColor.converted(to: rommSpace, intent: .relativeColorimetric, options: nil)!
+let restored = working.converted(to: srgb, intent: .relativeColorimetric, options: nil)!
+for channel in 0..<3 {
+    expect(close(Double(restored.components![channel]),
+                 Double(userColor.components![channel]), eps: 0.03),
+           "roundtrip UI sRGB/ROMM channel \\(channel)")
+}
+expect(working.colorSpace?.name == rommSpace.name, "native ProPhoto selection space")
+print("Verified: Mac curves, grading, mask packing, legacy presets, native CC defaults and ROMM colour roundtrip")
