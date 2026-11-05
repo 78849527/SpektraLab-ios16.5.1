@@ -10,6 +10,9 @@ on:
       - '.github/workflows/ios16.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-iphoneos:
     runs-on: macos-latest
@@ -54,3 +57,21 @@ jobs:
           name: SpectraPort-ios16-v0.2.1-navigation-unsigned
           path: ios/build/SpectraPort-ios16-v0.2.1-navigation-unsigned.ipa
           if-no-files-found: error
+      - name: Publish public IPA download (unofficial prerelease)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/port/ios16-native-engine'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILE="ios/build/SpectraPort-ios16-v0.2.1-navigation-unsigned.ipa"
+          TAG="ios16-v0.2.1"
+          test -s "$FILE"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            gh release create "$TAG" "$FILE" \
+              --target "$GITHUB_SHA" \
+              --title "SpectraPort iOS 16 v0.2.1 (unofficial test)" \
+              --notes "Unofficial iOS 16 test port based on SpektraLab. Includes editor back navigation and copyable diagnostics. The IPA is unsigned and requires manual signing. Not yet validated on all iPhone hardware." \
+              --prerelease
+          fi
+          gh release view "$TAG" --json url -q .url
