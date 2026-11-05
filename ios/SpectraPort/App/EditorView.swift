@@ -222,6 +222,7 @@ final class EditorModel: ObservableObject {
 
     func exportOriginal(
         format: PreviewExporter.Format,
+        limitOverride: ExportLimit? = nil,
         completion: @escaping (Result<HighResExportResult, Error>) -> Void
     ) {
         guard let data = sourceData, processed != nil, !isBusy, !isRendering else {
@@ -239,7 +240,7 @@ final class EditorModel: ObservableObject {
         status = "高清导出执行中，预览已临时释放 GPU 缓存"
         let settings = snapshot()
         renderer.exportOriginal(
-            data: data, settings: settings, format: format, limit: exportLimit,
+            data: data, settings: settings, format: format, limit: limitOverride ?? exportLimit,
             progress: { [weak self] stage in
                 self?.exportPhase = stage
             },
@@ -330,6 +331,7 @@ struct EditorView: View {
     @State private var mostRecentExport: ShareItem?
     @State private var mostRecentExportLabel = ""
     @State private var showPreviousFilm = false
+    @State private var detailInspection: DetailInspection?
 
     @State private var filmFilter: FilmBrowseFilter = .all
     @State private var cameraExpanded = true
@@ -391,6 +393,8 @@ struct EditorView: View {
         Live preview: \(model.realtimeEnabled)
         Live rendering: \(model.isRendering)
         Live debounce: 240 ms
+        Halation amount means: back-reflection area; zero disables whole halation node
+        High-res detail inspector: 12.5MP maximum, on demand, local only
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
@@ -412,6 +416,18 @@ struct EditorView: View {
             shareItem = saved
         } catch {
             model.status = "导出预览失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func inspectFullResolution() {
+        guard canExport else {
+            model.status = "请先应用当前参数再检查高清细节"
+            return
+        }
+        model.exportOriginal(format: .jpeg, limitOverride: .high) { result in
+            if case let .success(info) = result {
+                detailInspection = DetailInspection(result: info)
+            }
         }
     }
 
@@ -516,6 +532,21 @@ struct EditorView: View {
                 .buttonStyle(.bordered)
                 .tint(DarkroomStyle.accent)
                 .disabled(model.previousProcessed == nil || model.isBusy)
+            }
+            HStack(spacing: 9) {
+                Button {
+                    inspectFullResolution()
+                } label: {
+                    Label("高清局部检查", systemImage: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                .disabled(!canExport)
+                Spacer()
+                Text("原图重新渲染 · 最多 12.5MP")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
             }
         }
     }
@@ -656,10 +687,13 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
-                            label: "光晕强度", value: $model.halationAmount,
+                            label: "反射光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
                             disabled: model.isBusy
                         )
+                        Text("0 = 完全关闭光晕处理；1 = 胶片默认反射面积。普通画面效果较弱，夜间点光源边缘更明显。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(DarkroomStyle.secondary)
                     }
                     .padding(.top, 16)
                 } label: {
@@ -942,10 +976,13 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
-                            label: "光晕强度", value: $model.halationAmount,
+                            label: "反射光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
                             disabled: model.isBusy
                         )
+                        Text("0 = 完全关闭光晕处理；1 = 胶片默认反射面积。普通画面效果较弱，夜间点光源边缘更明显。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(DarkroomStyle.secondary)
                     } else {
                         DarkroomControlRow(
                             label: "相纸曝光", value: $model.printExposure,
@@ -1102,6 +1139,9 @@ struct EditorView: View {
             }
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
+            }
+            .fullScreenCover(item: $detailInspection) { inspection in
+                DetailInspectionView(inspection: inspection)
             }
         }
         .preferredColorScheme(.dark)
