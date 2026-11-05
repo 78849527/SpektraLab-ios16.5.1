@@ -1,3 +1,4 @@
+import AVFoundation
 import Metal
 import PhotosUI
 import SwiftUI
@@ -402,6 +403,7 @@ struct EditorView: View {
     @StateObject private var presetStore = PresetStore()
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showingCamera = false
+    @State private var zoomResetToken = 0
     @State private var showSavePreset = false
     @State private var newPresetName = ""
     @State private var copiedStatus = false
@@ -479,6 +481,9 @@ struct EditorView: View {
         Rendered dimensions: \(dimensions)
         Photo source: \(model.capturedFormat)
         RAW retained locally: \(model.capturedRAWURL != nil)
+        Camera privacy key present: \(!(Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? "").isEmpty)
+        Camera authorization code: \(AVCaptureDevice.authorizationStatus(for: .video).rawValue)
+        Preview reset fit: available
         Photo source version: \(model.photoSelectionVersion)
         Film: \(model.filmID)
         Paper: \(model.paperID)
@@ -633,6 +638,7 @@ struct EditorView: View {
                             InlineZoomPreview(
                                 preview: image,
                                 highResolutionURL: inlineHighResolutionURL,
+                                resetToken: zoomResetToken,
                                 onNeedsHighResolution: { inspectFullResolution() }
                             )
                             .frame(width: g.size.width, height: g.size.height)
@@ -714,6 +720,16 @@ struct EditorView: View {
                 .disabled(model.previousProcessed == nil || model.isBusy)
             }
             HStack(spacing: 9) {
+                Button {
+                    zoomResetToken += 1
+                } label: {
+                    Label("整张", systemImage: "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                .disabled(model.processed == nil)
+
                 Button {
                     inspectFullResolution()
                 } label: {
@@ -1406,6 +1422,7 @@ struct EditorView: View {
             }
             .onChange(of: model.photoSelectionVersion) { _ in
                 clearInlineHighResolution()
+                zoomResetToken += 1
                 photoSaveFeedback = ""
             }
             .onChange(of: model.previewSequence) { _ in
