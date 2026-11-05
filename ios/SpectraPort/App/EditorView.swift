@@ -12,6 +12,9 @@ final class EditorModel: ObservableObject {
     @Published var compare = false
     @Published var isDirty = false
     @Published var lastElapsedMS: Double?
+    @Published var exportLimit: ExportLimit = .high
+    @Published var exportPhase = ""
+    @Published var lastExportInfo = "尚未进行高清导出"
 
     @Published var filmID = FilmCatalog.films.contains(where: { $0.id == "kodak_portra_400" })
         ? "kodak_portra_400" : (FilmCatalog.films.first?.id ?? "")
@@ -72,6 +75,44 @@ final class EditorModel: ObservableObject {
                 status = "照片读取失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    func exportOriginal(
+        format: PreviewExporter.Format,
+        completion: @escaping (Result<HighResExportResult, Error>) -> Void
+    ) {
+        guard let data = sourceData, processed != nil, !isBusy else {
+            status = "请先选择照片并完成预览"
+            return
+        }
+        guard !isDirty else {
+            status = "请先应用未渲染的参数"
+            return
+        }
+        isBusy = true
+        exportPhase = "准备高清导出…"
+        status = "高清导出执行中，预览已临时释放 GPU 缓存"
+        let settings = snapshot()
+        renderer.exportOriginal(
+            data: data, settings: settings, format: format, limit: exportLimit,
+            progress: { [weak self] stage in
+                self?.exportPhase = stage
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                self.isBusy = false
+                self.exportPhase = ""
+                switch result {
+                case let .success(info):
+                    self.lastExportInfo = info.summary
+                    self.status = "已生成高清文件：" + info.summary
+                case let .failure(error):
+                    self.lastExportInfo = "导出失败：" + error.localizedDescription
+                    self.status = self.lastExportInfo
+                }
+                completion(result)
+            }
+        )
     }
 
     func applySettings() {
@@ -139,6 +180,8 @@ struct EditorView: View {
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")
         Engine: persistent session, spk_reprint
         Pending edits: \(model.isDirty)
+        High-res limit: \(model.exportLimit.rawValue)
+        Last high-res export: \(model.lastExportInfo)
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
@@ -154,6 +197,14 @@ struct EditorView: View {
             shareItem = ShareItem(url: try PreviewExporter.write(image, format: format))
         } catch {
             model.status = "导出预览失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func exportOriginal(_ format: PreviewExporter.Format) {
+        model.exportOriginal(format: format) { result in
+            if case let .success(output) = result {
+                shareItem = ShareItem(url: output.url)
+            }
         }
     }
 
@@ -225,7 +276,29 @@ struct EditorView: View {
                     }
                     .disabled(model.isBusy || model.isDirty || model.processed == nil)
 
-                    if model.isBusy { ProgressView("原版引擎处理中…") }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("高清导出").font(.headline)
+                        Picker("分辨率与内存保护", selection: $model.exportLimit) {
+                            ForEach(ExportLimit.allCases) { option in
+                                Text(option.rawValue).tag(option)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(model.isBusy)
+                        HStack(spacing: 12) {
+                            Button("高清 JPEG") { exportOriginal(.jpeg) }
+                            Button("高清 PNG") { exportOriginal(.png) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.isBusy || model.isDirty || model.processed == nil)
+                        Text("超出像素上限会降采样；此导出独立运行原版 full 层级，不会拉伸预览图。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if model.isBusy {
+                        ProgressView(model.exportPhase.isEmpty ? "原版引擎处理中…" : model.exportPhase)
+                    }
                     Text(model.status)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -270,7 +343,7 @@ struct EditorView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty || !model.hasPhoto)
 
-                    Text("胶片／相纸与参数均由原版引擎计算。调整后点击应用；可导出 1440px 的 JPEG/PNG 预览。原图全分辨率导出尚未支持。")
+                    Text("胶片／相纸与参数均由原版引擎计算。调整后点击应用；可导出 1440px 的 JPEG/PNG 预览。高清导出支持最高 12.5MP，超出会降采样以保护内存。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 .padding()

@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.4.0 / Build 5
+## Current iOS build: v0.5.0 / Build 6
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -24,8 +24,18 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   spk_reprint to reuse negatives for print-only changes.
 - Preview-only JPEG and PNG share/saving via the iOS share sheet, explicitly
   converted from original ProPhoto RGB engine output to sRGB.
-- Continuous realtime preview, RAW-specialized decode, full-resolution
-  export and full film/paper parity remain future work. Some film/paper
+- Original full-tier export is now available at two explicit size ceilings:
+  6 MP (safer) or 12.5 MP (higher memory), after metadata preflight.
+  Images above the selected ceiling are *downsampled* and reported as such;
+  never claim the output equals the full source resolution when it doesn't.
+- Full export drops native live session caches and creates a new high-res session,
+  calls `spk_render(..., "full")` with original film and paper profiles,
+  uses striped engine execution, and outputs sRGB JPEG/PNG directly from
+  borrowed RGBA16 storage. The preview UIImage remains on screen.
+- Export stage messages indicate real workflow phases, not fabricated percentages.
+- Continuous realtime preview, RAW-specialized decode, high-res output above
+  12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
+  future work. Some film/paper
   combinations may have model limitations; report any error using Copy Status.
 
 ## Building and downloading

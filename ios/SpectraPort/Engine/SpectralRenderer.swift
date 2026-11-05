@@ -49,6 +49,90 @@ final class SpectralRenderer {
         }
     }
 
+    /// Pause normal preview work while exporting, and report real phase
+    /// transitions rather than inventing percentages for an opaque GPU pass.
+    func exportOriginal(
+        data: Data,
+        settings: FilmSettings,
+        format: PreviewExporter.Format,
+        limit: ExportLimit,
+        progress: @escaping (String) -> Void,
+        completion: @escaping (Result<HighResExportResult, Error>) -> Void
+    ) {
+        queue.async {
+            let report: (String) -> Void = { phase in
+                DispatchQueue.main.async { progress(phase) }
+            }
+            let outcome = Result {
+                try self.exportSynchronously(data, settings: settings, format: format,
+                                             limit: limit, report: report)
+            }
+            DispatchQueue.main.async { completion(outcome) }
+        }
+    }
+
+    private func resetNativeState() {
+        if let session { spk_session_release(session) }
+        session = nil
+        if let engine { spk_engine_destroy(engine) }
+        engine = nil
+        cachedPhotoID = nil
+        cachedOriginal = nil
+        appliedSettings = nil
+    }
+
+    private func exportSynchronously(
+        _ data: Data,
+        settings: FilmSettings,
+        format: PreviewExporter.Format,
+        limit: ExportLimit,
+        report: (String) -> Void
+    ) throws -> HighResExportResult {
+        // The preview's native caches can be large. Release them *before*
+        // decoding the high-resolution frame. A later Apply opens preview
+        // again, but the currently shown UIImage stays on screen.
+        resetNativeState()
+        defer { resetNativeState() }
+
+        report("检查尺寸并解码原始照片…")
+        var frame = try FullSizeExporter.decode(data, limit: limit)
+        report("初始化高清光谱会话…")
+        let native = try ensureEngine()
+        var openReply: UnsafeMutablePointer<CChar>?
+        defer { if let openReply { spk_string_free(openReply) } }
+        let delta = try settings.deltaJSON(striped: true)
+        let opened: OpaquePointer? = frame.pixels.withUnsafeBufferPointer { buffer in
+            var input = spk_image(
+                data: buffer.baseAddress, width: UInt32(frame.width),
+                height: UInt32(frame.height), channels: 4
+            )
+            return delta.withCString { spk_open(native, &input, $0, &openReply) }
+        }
+        // The native engine copied its source; release caller's float pixels
+        // before film-development and print buffers are allocated.
+        frame.pixels.removeAll(keepingCapacity: false)
+        guard let opened else {
+            throw PortError.message("高清会话打开失败：" + errorMessage(native))
+        }
+        defer { spk_session_release(opened) }
+
+        report("原版 81 波长光谱引擎全尺寸渲染…")
+        var output = spk_result()
+        let code = "full".withCString { spk_render(opened, $0, &output) }
+        guard code == SPK_OK else {
+            throw PortError.message("高清光谱渲染失败：" + errorMessage(native))
+        }
+        defer { spk_result_free(&output) }
+
+        report("转换 sRGB 并编码文件…")
+        let url = try FullSizeExporter.write(output, format: format)
+        return HighResExportResult(
+            url: url, width: Int(output.width), height: Int(output.height),
+            originalWidth: frame.nativeWidth, originalHeight: frame.nativeHeight,
+            elapsedMS: output.elapsed_ms
+        )
+    }
+
     private func errorMessage(_ engine: OpaquePointer?) -> String {
         guard let text = spk_last_error(engine) else { return "unknown error" }
         return String(cString: text)

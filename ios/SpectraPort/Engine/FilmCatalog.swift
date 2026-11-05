@@ -58,10 +58,10 @@ struct FilmSettings: Equatable {
     let magentaShift: Double
     let yellowShift: Double
 
-    func deltaJSON() throws -> String {
+    func deltaJSON(striped: Bool = false) throws -> String {
         // These exact field names and ranges come from engine/src/core/params.cpp.
         // Keep colour-management fields identical to the successful v0.2.1 path.
-        let values: [String: Any] = [
+        var values: [String: Any] = [
             "input_color_space": "ProPhoto RGB",
             "input_cctf_decoding": true,
             "film_stock": filmStock,
@@ -73,6 +73,7 @@ struct FilmSettings: Equatable {
             "m_filter_shift": magentaShift,
             "y_filter_shift": yellowShift
         ]
+        if striped { values["striped"] = true; values["strip_rows"] = 0 }
         let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
         guard let json = String(data: data, encoding: .utf8) else {
             throw PortError.message("无法编码胶片参数")
