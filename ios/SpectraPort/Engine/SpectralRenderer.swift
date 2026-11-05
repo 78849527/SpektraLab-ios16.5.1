@@ -32,6 +32,14 @@ final class SpectralRenderer {
     private var cachedPhotoID: UUID?
     private var cachedOriginal: UIImage?
     private var appliedSettings: FilmSettings?
+    private var desktopLayer2: DesktopLayer2Processor?
+
+    private func gradeProcessor() throws -> DesktopLayer2Processor {
+        if let desktopLayer2 { return desktopLayer2 }
+        let processor = try DesktopLayer2Processor()
+        desktopLayer2 = processor
+        return processor
+    }
 
     deinit {
         // Every enqueued render strongly retains this instance until its C
@@ -89,6 +97,7 @@ final class SpectralRenderer {
         cachedPhotoID = nil
         cachedOriginal = nil
         appliedSettings = nil
+        desktopLayer2 = nil
     }
 
     private func exportSynchronously(
@@ -137,7 +146,24 @@ final class SpectralRenderer {
         defer { spk_result_free(&output) }
 
         report("转换 sRGB 并编码文件…")
-        let url = try FullSizeExporter.write(output, format: format)
+        let url: URL
+        if settings.adjustments.enabled && !settings.adjustments.isNeutral {
+            guard let raw = output.rgba16 else {
+                throw PortError.message("无法获取 Layer 2 原始印相像素")
+            }
+            report("应用 macOS 同源 Layer 2 调色与曲线…")
+            let graded = try gradeProcessor().apply(
+                raw: raw,
+                width: Int(output.width),
+                height: Int(output.height),
+                rowStridePixels: Int(output.row_stride_px),
+                adjustments: settings.adjustments
+            )
+            url = try FullSizeExporter.write(graded, format: format)
+        } else {
+            // Identical to the original port when Layer 2 is neutral.
+            url = try FullSizeExporter.write(output, format: format)
+        }
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let bytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
         return HighResExportResult(
@@ -294,9 +320,13 @@ final class SpectralRenderer {
             var reply: UnsafeMutablePointer<CChar>?
             defer { if let reply { spk_string_free(reply) } }
             guard let session else { throw PortError.message("会话已失效") }
-            let code = delta.withCString { spk_set_params(session, $0, &reply) }
-            guard code == SPK_OK else {
-                throw PortError.message("设置参数失败：" + errorMessage(engine))
+            // A pure Layer 2 edit does not alter negative, enlarger or
+            // paper parameters; skip the native parameter setter entirely.
+            if delta != "{}" {
+                let code = delta.withCString { spk_set_params(session, $0, &reply) }
+                guard code == SPK_OK else {
+                    throw PortError.message("设置参数失败：" + errorMessage(engine))
+                }
             }
             appliedSettings = settings
         }
@@ -314,6 +344,26 @@ final class SpectralRenderer {
 
         guard let raw = output.rgba16, output.width > 0, output.height > 0 else {
             throw PortError.message("引擎没有返回像素")
+        }
+        // Mac Layer 2 runs on the *encoded ProPhoto print*, after the
+        // spectral engine. The neutral branch below remains byte-exact.
+        if settings.adjustments.enabled && !settings.adjustments.isNeutral {
+            let graded = try gradeProcessor().apply(
+                raw: raw,
+                width: Int(output.width),
+                height: Int(output.height),
+                rowStridePixels: Int(output.row_stride_px),
+                adjustments: settings.adjustments
+            )
+            guard let original = cachedOriginal else {
+                throw PortError.message("预览原图缓存丢失")
+            }
+            return RenderedPhoto(
+                original: original,
+                processed: UIImage(cgImage: graded),
+                elapsedMS: output.elapsed_ms,
+                parametersVerified: true
+            )
         }
         // Retain the original ProPhoto RGB / RGBA16 management of v0.2.1.
         // Copy the row-strided pixels before the native texture is released.
