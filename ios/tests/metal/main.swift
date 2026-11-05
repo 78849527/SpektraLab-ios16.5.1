@@ -223,6 +223,13 @@ func meanCentralRGB(_ image: CGImage) -> SIMD3<Double> {
 }
 let jpgPixel = meanCentralRGB(jpegPhoto)
 let pngPixel = meanCentralRGB(pngPhoto)
+let channelDiffs = [
+    abs(jpgPixel.x - pngPixel.x),
+    abs(jpgPixel.y - pngPixel.y),
+    abs(jpgPixel.z - pngPixel.z)
+]
+let diagnostic = "Build21 JPEG center \(jpgPixel); PNG center \(pngPixel); deltas \(channelDiffs)\n"
+FileHandle.standardError.write(Data(diagnostic.utf8))
 check(abs(jpgPixel.x - pngPixel.x) < 0.06 &&
       abs(jpgPixel.y - pngPixel.y) < 0.06 &&
       abs(jpgPixel.z - pngPixel.z) < 0.06,
