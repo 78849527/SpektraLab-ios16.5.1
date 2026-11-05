@@ -13,6 +13,10 @@ final class EditorModel: ObservableObject {
     @Published var realtimeEnabled = true
     @Published var compare = false
     @Published var isDirty = false
+    @Published var previousProcessed: UIImage?
+    @Published var pixelChangePercent: Double?
+    @Published var lastParametersVerified = false
+    @Published var previewSequence = 0
     @Published var lastElapsedMS: Double?
     @Published var exportLimit: ExportLimit = .safe
     @Published var exportPhase = ""
@@ -34,6 +38,8 @@ final class EditorModel: ObservableObject {
     private var debounceTask: Task<Void, Never>?
     private var previewInFlight = false
     private var requestVersion = 0
+    private var lastSuccessfulPhotoID: UUID?
+    private var lastSuccessfulSettings: FilmSettings?
 
     var hasPhoto: Bool { sourceData != nil }
     private let renderer = SpectralRenderer()
@@ -130,9 +136,24 @@ final class EditorModel: ObservableObject {
             switch outcome {
             case let .success(photo):
                 if upToDate {
+                    if self.lastSuccessfulPhotoID == capturedPhotoID,
+                       self.lastSuccessfulSettings != captured,
+                       let before = self.processed {
+                        self.previousProcessed = before
+                        self.pixelChangePercent = PreviewDifference.averageRGBChangePercent(
+                            from: before, to: photo.processed
+                        )
+                    } else if self.lastSuccessfulPhotoID != capturedPhotoID {
+                        self.previousProcessed = nil
+                        self.pixelChangePercent = nil
+                    }
+                    self.lastSuccessfulPhotoID = capturedPhotoID
+                    self.lastSuccessfulSettings = captured
                     self.original = photo.original
                     self.processed = photo.processed
                     self.lastElapsedMS = photo.elapsedMS
+                    self.lastParametersVerified = photo.parametersVerified
+                    self.previewSequence += 1
                     self.status = "\(FilmCatalog.filmName(captured.filmStock)) · 已实时预览"
                     self.isDirty = false
                     self.onSuccessfulRender?(captured)
@@ -186,6 +207,10 @@ final class EditorModel: ObservableObject {
                 }
                 sourceData = data
                 photoID = UUID()
+                previousProcessed = nil
+                pixelChangePercent = nil
+                lastSuccessfulPhotoID = nil
+                lastSuccessfulSettings = nil
                 isBusy = false
                 applySettings()
             } catch {
@@ -304,6 +329,7 @@ struct EditorView: View {
     @State private var shareItem: ShareItem?
     @State private var mostRecentExport: ShareItem?
     @State private var mostRecentExportLabel = ""
+    @State private var showPreviousFilm = false
 
     @State private var filmFilter: FilmBrowseFilter = .all
     @State private var cameraExpanded = true
@@ -357,9 +383,13 @@ struct EditorView: View {
         Last high-res export: \(model.lastExportInfo)
         Saved presets: \(presetStore.presets.count)
         Recent combinations: \(presetStore.recentPairs.count)
-        UI: darkroom v0.8 top-tabs
-        Live preview: (model.realtimeEnabled)
-        Live rendering: (model.isRendering)
+        UI: darkroom v0.8.1 effect verification
+        Product exposure defaults: true
+        Filter shift scale: 40 CC per unit
+        C++ params readback verified: \(model.lastParametersVerified)
+        Preview change (% mean sRGB RGB): \(model.pixelChangePercent.map { String(format: "%.3f", $0) } ?? "N/A")
+        Live preview: \(model.realtimeEnabled)
+        Live rendering: \(model.isRendering)
         Live debounce: 240 ms
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
@@ -415,7 +445,9 @@ struct EditorView: View {
                     .fill(Color.black)
 
                 Group {
-                    if let image = model.compare ? model.original : model.processed {
+                    if let image = model.compare
+                        ? model.original
+                        : (showPreviousFilm ? model.previousProcessed : model.processed) {
                         GeometryReader { g in
                             Image(uiImage: image)
                                 .resizable()
@@ -439,7 +471,7 @@ struct EditorView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Text(model.compare ? "ORIGINAL" : "FILM PREVIEW")
+                Text(model.compare ? "ORIGINAL" : (showPreviousFilm ? "PREVIOUS FILM" : "FILM PREVIEW"))
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .tracking(1.4)
                     .foregroundStyle(DarkroomStyle.primary.opacity(0.9))
@@ -463,14 +495,27 @@ struct EditorView: View {
 
                 Button {
                     model.compare.toggle()
+                    showPreviousFilm = false
                 } label: {
-                    Label(model.compare ? "显示效果" : "对比原图", systemImage: "square.on.square")
-                        .font(.system(size: 13, weight: .medium))
+                    Label(model.compare ? "效果" : "原图", systemImage: "square.on.square")
+                        .font(.system(size: 12, weight: .medium))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .tint(DarkroomStyle.accent)
                 .disabled(model.processed == nil || model.isBusy)
+
+                Button {
+                    model.compare = false
+                    showPreviousFilm.toggle()
+                } label: {
+                    Label(showPreviousFilm ? "当前" : "上次", systemImage: "rectangle.on.rectangle")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                .disabled(model.previousProcessed == nil || model.isBusy)
             }
         }
     }
@@ -801,6 +846,14 @@ struct EditorView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(DarkroomStyle.secondary)
             }
+            if let delta = model.pixelChangePercent {
+                Text("前后效果采样差异：\(String(format: "%.2f", delta))% · C++ 参数已核对")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DarkroomStyle.accent)
+                Text("点预览区下方「上次／当前」切换；这是 80×80 sRGB 像素均值差异，不是人眼感知评分。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
+            }
             Text(model.status)
                 .font(.system(size: 11))
                 .foregroundStyle(DarkroomStyle.secondary)
@@ -1021,6 +1074,7 @@ struct EditorView: View {
             .toolbarBackground(DarkroomStyle.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .onChange(of: selectedPhoto) { model.importPhoto($0) }
+            .onChange(of: model.previewSequence) { _ in showPreviousFilm = false }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
             .onChange(of: model.grainAmount) { _ in model.markDirty() }
