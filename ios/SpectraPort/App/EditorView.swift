@@ -35,6 +35,7 @@ final class EditorModel: ObservableObject {
     @Published var printExposure = 1.0
     @Published var magentaShift = 0.0
     @Published var yellowShift = 0.0
+    @Published var softness = 0.0
 
     private var sourceData: Data?
     private var photoID = UUID()
@@ -61,6 +62,7 @@ final class EditorModel: ObservableObject {
         printExposure = settings.printExposure
         magentaShift = settings.magentaShift
         yellowShift = settings.yellowShift
+        softness = settings.softness
         markDirty()
         status = hasPhoto ? "已载入参数，点击「应用设置」渲染" : "预设已载入，选择照片后应用"
     }
@@ -70,7 +72,8 @@ final class EditorModel: ObservableObject {
             filmStock: "kodak_portra_400",
             printStock: "kodak_portra_endura",
             exposureEV: 0, grainAmount: 1, halationAmount: 1,
-            printExposure: 1, magentaShift: 0, yellowShift: 0
+            printExposure: 1, magentaShift: 0, yellowShift: 0,
+            softness: 0
         ))
     }
 
@@ -195,7 +198,8 @@ final class EditorModel: ObservableObject {
             filmStock: filmID, printStock: paperID,
             exposureEV: exposureEV, grainAmount: grainAmount,
             halationAmount: halationAmount, printExposure: printExposure,
-            magentaShift: magentaShift, yellowShift: yellowShift
+            magentaShift: magentaShift, yellowShift: yellowShift,
+            softness: softness
         )
     }
 
@@ -484,6 +488,8 @@ struct EditorView: View {
         Print exposure: \(String(format: "%.2f", model.printExposure))
         Magenta shift: \(String(format: "%.2f", model.magentaShift))
         Yellow shift: \(String(format: "%.2f", model.yellowShift))
+        Input digital softness: \(String(format: "%.2f", model.softness))
+        Softness stage: Core Image pre-film (independent of original C++ engine)
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")
         Engine: persistent session, spk_reprint
         Pending edits: \(model.isDirty)
@@ -936,6 +942,14 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
+                            label: "降低数码锐利感", value: $model.softness,
+                            range: 0...1, step: 0.05, suffix: "",
+                            disabled: model.isBusy
+                        )
+                        Text("0 = 保留拍摄原始锐利度；1 = 适度减弱数码边缘反差。不能还原 JPEG 已丢失的细节，胶片颗粒在此之后生成。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                        DarkroomControlRow(
                             label: "反射光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
                             disabled: model.isBusy
@@ -1067,6 +1081,15 @@ struct EditorView: View {
                         Label("分享 1440px 预览图", systemImage: "square.and.arrow.up")
                     }
                     .disabled(!canExport)
+
+                    if let rawURL = model.capturedRAWURL {
+                        Button {
+                            shareItem = ShareItem(url: rawURL)
+                        } label: {
+                            Label("分享拍摄 RAW 原片（DNG）", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(model.isBusy)
+                    }
 
                     Text("高清导出 · 使用原版 full 光谱渲染")
                         .font(.system(size: 12))
@@ -1234,6 +1257,14 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
+                            label: "降低数码锐利感", value: $model.softness,
+                            range: 0...1, step: 0.05, suffix: "",
+                            disabled: model.isBusy
+                        )
+                        Text("0 = 保留拍摄原始锐利度；1 = 适度减弱数码边缘反差。不能还原 JPEG 已丢失的细节，胶片颗粒在此之后生成。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                        DarkroomControlRow(
                             label: "反射光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
                             disabled: model.isBusy
@@ -1388,6 +1419,7 @@ struct EditorView: View {
             .onChange(of: model.printExposure) { _ in model.markDirty() }
             .onChange(of: model.magentaShift) { _ in model.markDirty() }
             .onChange(of: model.yellowShift) { _ in model.markDirty() }
+            .onChange(of: model.softness) { _ in model.markDirty() }
             .onAppear {
                 model.onSuccessfulRender = { [weak presetStore] settings in
                     presetStore?.recordUse(settings)
