@@ -64,6 +64,8 @@ struct FilmSettings: Equatable, Codable {
         var values: [String: Any] = [
             "input_color_space": "ProPhoto RGB",
             "input_cctf_decoding": true,
+            "product_defaults": true,
+            "filter_shift_scale": 40.0,
             "film_stock": filmStock,
             "print_stock": printStock,
             "exposure_compensation_ev": exposureEV,
