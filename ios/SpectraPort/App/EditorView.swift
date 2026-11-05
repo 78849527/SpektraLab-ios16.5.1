@@ -350,7 +350,7 @@ private enum EditorTab: String, CaseIterable {
     case adjust = "调节"
     case grade = "调色"
     case presets = "预设"
-    case export = "导出"
+    case export = "更多"
 
     var symbol: String {
         switch self {
@@ -359,7 +359,7 @@ private enum EditorTab: String, CaseIterable {
         case .adjust: return "slider.horizontal.3"
         case .grade: return "circle.lefthalf.filled"
         case .presets: return "bookmark"
-        case .export: return "square.and.arrow.up"
+        case .export: return "ellipsis"
         }
     }
 }
@@ -746,7 +746,7 @@ struct EditorView: View {
                     Text("让光线经过胶片")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(DarkroomStyle.primary)
-                    Text("下方「图库」选择照片，或打开「拍摄」")
+                    Text("点击顶部「图库」选择照片，或使用「拍摄」")
                         .font(.system(size: 12))
                         .foregroundStyle(DarkroomStyle.secondary)
                 }
@@ -1198,7 +1198,22 @@ struct EditorView: View {
 
     private var exportSection: some View {
         DarkroomPanel {
-            DisclosureGroup(isExpanded: $exportExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Button {
+                        showingStartupSettings = true
+                    } label: {
+                        Label("启动设置", systemImage: "gearshape")
+                    }
+                    Spacer(minLength: 6)
+                    Button { copyStatus() } label: {
+                        Label("复制诊断", systemImage: "doc.on.doc")
+                    }
+                }
+                .font(.system(size: 11))
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                DisclosureGroup(isExpanded: $exportExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         shareFullResolutionToApps()
@@ -1280,6 +1295,7 @@ struct EditorView: View {
                 DarkroomSectionTitle(number: "06", title: "导出与分享", subtitle: "JPEG / PNG")
             }
             .tint(DarkroomStyle.accent)
+            }
         }
     }
 
@@ -1320,7 +1336,7 @@ struct EditorView: View {
 
     private var editorSections: some View {
         HStack(spacing: 4) {
-            ForEach([EditorTab.film, .paper, .adjust, .grade, .presets], id: \.self) { tab in
+            ForEach([EditorTab.film, .paper, .adjust, .grade, .presets, .export], id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         selectedTab = tab
@@ -1347,65 +1363,6 @@ struct EditorView: View {
         .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-    }
-
-    private var bottomNavigation: some View {
-        HStack(spacing: 0) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                navigationIcon("图库", symbol: "photo")
-            }
-            .disabled(model.isBusy || model.isRendering)
-
-            Button {
-                openCamera()
-            } label: {
-                navigationIcon("拍摄", symbol: "camera")
-            }
-            .disabled(model.isBusy || model.isRendering)
-
-            Button {
-                selectedTab = .adjust
-            } label: {
-                navigationIcon("编辑", symbol: "slider.horizontal.3", selected:
-                    selectedTab == .adjust || selectedTab == .grade ||
-                    selectedTab == .film || selectedTab == .paper)
-            }
-
-            Button {
-                selectedTab = .presets
-            } label: {
-                navigationIcon("预设", symbol: "square.stack",
-                               selected: selectedTab == .presets)
-            }
-
-            Button {
-                selectedTab = .export
-            } label: {
-                navigationIcon("更多", symbol: "ellipsis",
-                               selected: selectedTab == .export)
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(height: 60)
-        .padding(.horizontal, 8)
-        .padding(.top, 4)
-        .background(
-            DarkroomStyle.background
-                .overlay(alignment: .top) { DarkroomStyle.line.frame(height: 1) }
-        )
-    }
-
-    private func navigationIcon(_ name: String, symbol: String,
-                                selected: Bool = false) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(.system(size: 19, weight: .medium))
-            Text(name)
-                .font(.system(size: 10, weight: selected ? .semibold : .medium))
-        }
-        .foregroundStyle(selected ? DarkroomStyle.accent : DarkroomStyle.secondary)
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .contentShape(Rectangle())
     }
 
     private var quickAdjustmentPanel: some View {
@@ -1629,7 +1586,7 @@ struct EditorView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     previewSection
-                        .frame(height: max(220, geometry.size.height * 0.615))
+                        .frame(height: max(220, geometry.size.height * 0.55))
                         .padding(.horizontal, 10)
                         .padding(.top, 6)
                         .padding(.bottom, 2)
@@ -1650,17 +1607,23 @@ struct EditorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(DarkroomStyle.background.ignoresSafeArea())
-            .safeAreaInset(edge: .bottom, spacing: 0) { bottomNavigation }
             .navigationTitle("SpectraPort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        showingStartupSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
+                ToolbarItemGroup(placement: .navigationBarLeading) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .frame(minWidth: 34, minHeight: 44)
                     }
-                    .accessibilityLabel("启动偏好设置")
+                    .disabled(model.isBusy || model.isRendering)
+                    .accessibilityLabel("图库导入照片")
+
+                    Button { openCamera() } label: {
+                        Image(systemName: "camera")
+                            .frame(minWidth: 34, minHeight: 44)
+                    }
+                    .disabled(model.isBusy || model.isRendering)
+                    .accessibilityLabel("打开相机")
                     .foregroundStyle(DarkroomStyle.accent)
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
