@@ -149,6 +149,10 @@ struct MobileLocalMaskEditor: View {
                             )
                         }
                     } else if kind == .luminanceRange {
+                        Label("点击或拖动上方照片取样亮度。黄色十字标记取样位置，然后调整亮度上下限和局部曝光。", systemImage: "scope")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DarkroomStyle.accent)
+                            .fixedSize(horizontal: false, vertical: true)
                         DarkroomControlRow(
                             label: "亮度下限", value: $masks[i].components[0].low,
                             range: 0...1, step: 0.02, suffix: "", disabled: false

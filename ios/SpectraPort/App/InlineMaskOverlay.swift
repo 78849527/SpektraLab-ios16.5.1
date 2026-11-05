@@ -8,9 +8,14 @@ struct InlineMaskOverlay: View {
     @Binding var masks: [EditMask]
     @Binding var selectedID: UUID?
     let photoRect: CGRect
+    let image: UIImage
 
     @State private var lineDragStartA: CGPoint?
     @State private var lineDragStartB: CGPoint?
+    @State private var draggingSamplePoint: CGPoint?
+    @State private var lastSamplePoint: CGPoint?
+    @State private var lastSampleMaskID: UUID?
+    @State private var lastSampleLuma: Double?
 
     private var index: Int? {
         if let selectedID,
@@ -66,6 +71,47 @@ struct InlineMaskOverlay: View {
             if axis == 1 { masks[i].components[0].radii.width = value }
             else { masks[i].components[0].radii.height = value }
         }
+    }
+
+
+    private func chooseLuminance(_ touch: CGPoint) {
+        guard let i = index, masks.indices.contains(i),
+              let component = masks[i].components.first,
+              component.kind == .luminanceRange,
+              photoRect.contains(touch),
+              let cg = image.cgImage else { return }
+        let uv = MaskPhotoGeometry.normalized(touch, in: photoRect)
+        guard let luma = MaskLuminanceSampling.sample(cg, at: uv) else { return }
+        let selected = MaskLuminanceSampling.range(around: luma)
+        masks[i].components[0].low = selected.low
+        masks[i].components[0].high = selected.high
+        masks[i].components[0].softness = 0.06
+        lastSamplePoint = uv
+        lastSampleMaskID = masks[i].id
+        lastSampleLuma = luma
+    }
+
+    private func luminanceCrosshair(_ uv: CGPoint, brightness: Double?) -> some View {
+        VStack(spacing: 3) {
+            ZStack {
+                Circle().fill(.black.opacity(0.65)).frame(width: 42, height: 42)
+                Circle().stroke(DarkroomStyle.accent, lineWidth: 2)
+                    .frame(width: 30, height: 30)
+                Rectangle().fill(DarkroomStyle.accent).frame(width: 42, height: 2)
+                Rectangle().fill(DarkroomStyle.accent).frame(width: 2, height: 42)
+                Circle().fill(DarkroomStyle.accent).frame(width: 5, height: 5)
+            }
+            if let brightness {
+                Text("亮度 \(Int((brightness * 100).rounded()))%")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.black.opacity(0.75), in: Capsule())
+            }
+        }
+        .position(MaskPhotoGeometry.point(uv, in: photoRect))
+        .allowsHitTesting(false)
     }
 
     private func handle(_ label: String, at point: CGPoint,
@@ -176,6 +222,31 @@ struct InlineMaskOverlay: View {
                         handle("线性渐变终点", at: b,
                                tint: DarkroomStyle.accent) { point in
                             setLinear(1, point, rect: photoRect)
+                        }
+                    } else if shape.kind == .luminanceRange {
+                        // Tonal ranges are selected by sampling a brightness
+                        // value, rather than moving spatial gradient handles.
+                        Rectangle().fill(.white.opacity(0.001))
+                            .frame(width: photoRect.width, height: photoRect.height)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0,
+                                            coordinateSpace: .named("mask-photo-overlay"))
+                                    .onChanged { touch in
+                                        draggingSamplePoint = MaskPhotoGeometry.normalized(
+                                            touch.location, in: photoRect)
+                                    }
+                                    .onEnded { touch in
+                                        draggingSamplePoint = nil
+                                        chooseLuminance(touch.location)
+                                    }
+                            )
+                            .position(x: photoRect.midX, y: photoRect.midY)
+                        if let point = draggingSamplePoint {
+                            luminanceCrosshair(point, brightness: nil)
+                        } else if lastSampleMaskID == masks[i].id,
+                                  let point = lastSamplePoint {
+                            luminanceCrosshair(point, brightness: lastSampleLuma)
                         }
                     } else if shape.kind == .radialGradient {
                         let center = MaskPhotoGeometry.point(

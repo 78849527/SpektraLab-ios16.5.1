@@ -90,6 +90,11 @@ jobs:
           assert canvas.count("MaskPhotoGeometry.fittedRect(") == 1
           assert "Image(uiImage: image)" in canvas
           assert "photoRect: photoRect" in canvas
+          assert "image: image" in canvas
+          assert "chooseLuminance(" in overlay
+          assert "MaskLuminanceSampling.sample(" in overlay
+          assert "shape.kind == .luminanceRange" in overlay
+          assert "点击或拖动上方照片取样亮度" in Path("ios/SpectraPort/App/MobileLocalMaskEditor.swift").read_text()
           assert "UIScrollView" not in canvas or "no UIScrollView" in canvas
           assert ".scaleEffect(" not in canvas
           assert "let photoRect: CGRect" in overlay
@@ -101,6 +106,13 @@ jobs:
           assert "url = try FullSizeExporter.write(graded, format: format)" in export
           print("FIXED_LOCAL_MASK_CANVAS_CONTRACT_PASS")
           PY
+      - name: Verify on-photo luminance picker uses ROMM brightness
+        run: |
+          swiftc -swift-version 5 -emit-executable \
+            ios/SpectraPort/Engine/MaskLuminanceSampling.swift \
+            ios/tests/luminance-picker/main.swift \
+            -o /tmp/luminance-picker-fixtures
+          /tmp/luminance-picker-fixtures | grep -q LUMINANCE_PICKER_PASS
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
           xcrun --sdk iphoneos metal -miphoneos-version-min=16.0 \
@@ -142,15 +154,15 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta24"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "24"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta25"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "25"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta24'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '24'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta25'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '25'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版24'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版25'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -165,13 +177,13 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-FixedCanvas-v0.14.4-beta.5-Build24-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-FixedCanvas-v0.14.4-beta.5-Build24-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-LumaPicker-v0.14.5-beta.6-Build25-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-LumaPicker-v0.14.5-beta.6-Build25-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-FixedCanvas-v0.14.4-beta.5-Build24-unsigned
-          path: ios/build/SpectraPort-iOS16-FixedCanvas-v0.14.4-beta.5-Build24-unsigned.ipa
+          name: SpectraPort-LumaPicker-v0.14.5-beta.6-Build25-unsigned
+          path: ios/build/SpectraPort-iOS16-LumaPicker-v0.14.5-beta.6-Build25-unsigned.ipa
           if-no-files-found: error
       # Post-package parity checks: preserve a distributable unsigned IPA even
       # if host-specific Metal numeric fixtures report an Intel GPU mismatch.

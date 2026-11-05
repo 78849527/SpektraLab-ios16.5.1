@@ -29,7 +29,8 @@ struct LocalMaskCanvas: View {
                     InlineMaskOverlay(
                         masks: $masks,
                         selectedID: $selectedID,
-                        photoRect: photoRect
+                        photoRect: photoRect,
+                        image: image
                     )
                     .frame(width: viewport.size.width, height: viewport.size.height)
                 }
