@@ -88,8 +88,8 @@ let graded = FilmSettings(
 expect(stock.samePhysicalPrint(as: graded), "Layer2 must reuse the spectral print")
 expect(stock != graded, "snapshot tracks grade/mask edits")
 let newSettingData = try JSONEncoder().encode(graded)
-expect(try JSONDecoder().decode(FilmSettings.self, from: newSettingData) == graded,
-       "new preset roundtrip")
+let decodedGraded = try JSONDecoder().decode(FilmSettings.self, from: newSettingData)
+expect(decodedGraded == graded, "new preset roundtrip")
 let oldData = try JSONEncoder().encode(stock)
 var oldJSON = try JSONSerialization.jsonObject(with: oldData) as! [String: Any]
 oldJSON.removeValue(forKey: "adjustments")

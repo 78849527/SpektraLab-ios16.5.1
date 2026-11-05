@@ -33,6 +33,7 @@ jobs:
             ios/SpectraPort/Engine/DesktopCurveMath.swift \
             ios/SpectraPort/Engine/DesktopAdjustments.swift \
             ios/SpectraPort/Engine/DesktopMasks.swift \
+            ios/SpectraPort/Engine/FilmCatalog.swift \
             ios/tests/main.swift \
             -o /tmp/spectraport-layer2-model-tests
       - name: Run parity model tests
