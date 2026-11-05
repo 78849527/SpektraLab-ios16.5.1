@@ -746,7 +746,7 @@ struct EditorView: View {
                     Text("让光线经过胶片")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(DarkroomStyle.primary)
-                    Text("点击顶部「图库」选择照片，或使用「拍摄」")
+                    Text("下方工具栏选择「图库」或「拍摄」")
                         .font(.system(size: 12))
                         .foregroundStyle(DarkroomStyle.secondary)
                 }
@@ -1334,35 +1334,71 @@ struct EditorView: View {
         .padding(.horizontal, 4)
     }
 
+    /// One always-visible editor row. All nine controls share the available
+    /// width: two photo sources, six tool sections and direct system sharing.
+    /// The touch height remains 48pt; labels/icons are only visually smaller.
+    private func compactNavLabel(_ title: String, icon: String,
+                                 active: Bool = false) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+            Text(title)
+                .font(.system(size: 9, weight: active ? .semibold : .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(active ? DarkroomStyle.background : DarkroomStyle.primary)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .background(active ? DarkroomStyle.accent : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 7))
+        .contentShape(Rectangle())
+    }
+
     private var editorSections: some View {
-        HStack(spacing: 4) {
-            ForEach([EditorTab.film, .paper, .adjust, .grade, .presets, .export], id: \.self) { tab in
+        HStack(spacing: 1) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                compactNavLabel("图库", icon: "photo.on.rectangle")
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy || model.isRendering)
+            .accessibilityLabel("图库导入照片")
+
+            Button {
+                openCamera()
+            } label: {
+                compactNavLabel("拍摄", icon: "camera")
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy || model.isRendering)
+            .accessibilityLabel("打开相机")
+
+            ForEach([EditorTab.film, .paper, .adjust, .grade, .presets, .export],
+                    id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         selectedTab = tab
                     }
                 } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: tab.symbol)
-                            .font(.system(size: 16, weight: .medium))
-                        Text(tab.rawValue)
-                            .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .medium))
-                    }
-                    .foregroundStyle(selectedTab == tab
-                                     ? DarkroomStyle.background : DarkroomStyle.primary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(
-                        selectedTab == tab ? DarkroomStyle.accent : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 12)
-                    )
+                    compactNavLabel(tab.rawValue, icon: tab.symbol,
+                                    active: selectedTab == tab)
                 }
                 .buttonStyle(.plain)
             }
+
+            Button {
+                shareFullResolutionToApps()
+            } label: {
+                compactNavLabel("分享", icon: "square.and.arrow.up")
+                    .opacity(canExport ? 1 : 0.35)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canExport)
+            .accessibilityLabel("分享到其他 App")
         }
-        .padding(5)
-        .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(3)
+        .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
     }
 
     private var quickAdjustmentPanel: some View {
@@ -1609,41 +1645,6 @@ struct EditorView: View {
             .background(DarkroomStyle.background.ignoresSafeArea())
             .navigationTitle("SpectraPort")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarLeading) {
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .frame(minWidth: 34, minHeight: 44)
-                    }
-                    .disabled(model.isBusy || model.isRendering)
-                    .accessibilityLabel("图库导入照片")
-
-                    Button { openCamera() } label: {
-                        Image(systemName: "camera")
-                            .frame(minWidth: 34, minHeight: 44)
-                    }
-                    .disabled(model.isBusy || model.isRendering)
-                    .accessibilityLabel("打开相机")
-                    .foregroundStyle(DarkroomStyle.accent)
-                }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        copyStatus()
-                    } label: {
-                        Image(systemName: copiedStatus ? "checkmark.circle" : "info.circle")
-                    }
-                    .accessibilityLabel("复制诊断状态")
-
-                    Button {
-                        shareFullResolutionToApps()
-                    } label: {
-                        Label("分享", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(!canExport)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DarkroomStyle.accent)
-                }
-            }
             .toolbarBackground(DarkroomStyle.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .onChange(of: selectedPhoto) {
