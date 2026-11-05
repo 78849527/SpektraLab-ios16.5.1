@@ -200,3 +200,95 @@ func largeFrameFixture(_ w: Int, _ h: Int, processor: DesktopLayer2Processor) th
 try largeFrameFixture(2000, 3000, processor: processor)
 try largeFrameFixture(3024, 4032, processor: processor)
 
+// One JSON fixture from the actual *original* macOS Metal kernel can be
+// compared against the Windows/WebGL-side TypeScript CPU implementation.
+// All test pixels are encoded ProPhoto/ROMM, identical to what the iPhone
+// port reads from the spectral print. A comparison cannot legitimately use
+// Windows's sRGB mid-grey: specify 0.3857 for both platforms.
+if CommandLine.arguments.count > 2 {
+    let w = 4, h = 4
+    var pixels = [UInt16](repeating: 65535, count: w * h * 4)
+    var inputRGB = [Double]()
+    for y in 0..<h {
+        for x in 0..<w {
+            let raw: [Double] = [
+                0.28 + 0.10 * Double(x),
+                0.20 + 0.09 * Double(y),
+                0.35 + 0.035 * Double(x + y)
+            ]
+            for component in 0..<3 {
+                let quantized = UInt16((raw[component] * 65535).rounded())
+                pixels[(y * w + x) * 4 + component] = quantized
+                inputRGB.append(Double(quantized) / 65535)
+            }
+        }
+    }
+    func metalCase(_ name: String, _ adjustments: Adjustments) throws -> [String: Any] {
+        let cg = try pixels.withUnsafeBufferPointer { buffer in
+            try processor.apply(
+                raw: buffer.baseAddress!, width: w, height: h,
+                rowStridePixels: w, adjustments: adjustments)
+        }
+        var output = [Double]()
+        for y in 0..<h {
+            for x in 0..<w {
+                for k in 0..<3 { output.append(channel(cg, x, y, k)) }
+            }
+        }
+        let codable = try JSONEncoder().encode(adjustments)
+        let json = try JSONSerialization.jsonObject(with: codable)
+        return [
+            "name": name, "width": w, "height": h,
+            "input": inputRGB, "output": output,
+            "adjustments": json
+        ]
+    }
+    var fixtures: [[String: Any]] = []
+    fixtures.append(try metalCase("identity", .default))
+    var exposure = Adjustments.default
+    exposure.exposure = 0.8
+    fixtures.append(try metalCase("exposure", exposure))
+    var balance = Adjustments.default
+    balance.temperature = 47
+    balance.tint = -27
+    balance.colorBalance.master.hue = 20
+    balance.colorBalance.master.saturation = 0.6
+    fixtures.append(try metalCase("white-balance-and-colour-wheel", balance))
+    var tonal = Adjustments.default
+    tonal.contrast = 18
+    tonal.brightness = 11
+    tonal.saturation = -15
+    tonal.highlights = -35
+    tonal.shadows = 26
+    tonal.blackPoint = 3
+    tonal.whitePoint = 4
+    fixtures.append(try metalCase("tone-regions", tonal))
+    var curved = Adjustments.default
+    var redCurve = Curve.identity
+    _ = redCurve.insert(CGPoint(x: 0.5, y: 0.7))
+    curved.curves.red = redCurve
+    fixtures.append(try metalCase("red-monotone-curve", curved))
+    var vignette = Adjustments.default
+    vignette.vignette.amount = -75
+    vignette.vignette.midpoint = 40
+    fixtures.append(try metalCase("vignette", vignette))
+    var full = Adjustments.default
+    full.exposure = 0.35
+    full.temperature = 21
+    full.contrast = 14
+    full.highlights = -27
+    full.shadows = 19
+    full.colorBalance.shadows.hue = 240
+    full.colorBalance.shadows.saturation = 0.35
+    full.curves.red = redCurve
+    full.vignette.amount = -23
+    fixtures.append(try metalCase("combined-layer2", full))
+    let serialized = try JSONSerialization.data(
+        withJSONObject: ["workingSpace": "ROMM RGB", "midGrey": 0.3857,
+                         "fixtures": fixtures],
+        options: [.prettyPrinted, .sortedKeys])
+    try serialized.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    print("MAC_METAL_GOLDEN_WRITTEN: \(fixtures.count) original shader pixel fixtures")
+}
+
+
