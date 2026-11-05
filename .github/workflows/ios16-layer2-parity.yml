@@ -136,9 +136,9 @@ jobs:
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
-          grep -Fq 'url = try gradeProcessor().export(' ios/SpectraPort/Engine/SpectralRenderer.swift
-          grep -Fq 'CIImage(mtlTexture: dst' ios/SpectraPort/Engine/DesktopLayer2Processor.swift
-          grep -Fq 'BUILD21_GPU_EXPORT_PASS' ios/tests/metal/main.swift
+          grep -Fq 'url = try FullSizeExporter.write(graded, format: format)' ios/SpectraPort/Engine/SpectralRenderer.swift
+          grep -Fq 'url = try FullSizeExporter.write(output, format: format)' ios/SpectraPort/Engine/SpectralRenderer.swift
+          grep -Fq 'METAL_GPU_FIXTURES_PASS' ios/tests/metal/main.swift
           grep -Fq 'destination = "editor"' ios/SpectraPort/App/SpectraPortApp.swift
           test ! -f ios/SpectraPort/App/SpectraCameraView.swift
           test ! -f ios/SpectraPort/Engine/RawImageDeveloper.swift

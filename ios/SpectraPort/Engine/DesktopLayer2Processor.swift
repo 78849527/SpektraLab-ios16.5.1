@@ -1,5 +1,4 @@
 import CoreGraphics
-import CoreImage
 import Foundation
 import Metal
 
@@ -15,7 +14,6 @@ final class DesktopLayer2Processor {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLComputePipelineState
-    private let exportContext: CIContext
     private let emptyMaskBuffer: MTLBuffer
     private let emptyMaskRaster: MTLTexture
     private let dummyInputLUT: MTLTexture
@@ -71,14 +69,17 @@ final class DesktopLayer2Processor {
         self.device = device
         self.commandQueue = queue
         self.pipeline = pipeline
-        self.exportContext = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
         self.emptyMaskBuffer = maskBuffer
         self.emptyMaskRaster = maskRaster
         self.dummyInputLUT = lut
     }
 
-    /// Preview: preserve the existing CGImage / UIImage interface and
-    /// neutral-path byte identity. This remains unchanged in Build 21.
+    /// Input: native engine RGBA16 little-endian ProPhoto RGB with explicit
+    /// row stride. Output: an independent CGImage tagged with the same ROMM
+    /// colour space. Do not mutate spk_result's borrowed/const pixel memory.
+    ///
+    /// This method is synchronous. Only call it on the spectral renderer's
+    /// serial background queue, never on the main UI thread.
     func apply(
         raw: UnsafePointer<UInt16>,
         width: Int,
@@ -87,142 +88,42 @@ final class DesktopLayer2Processor {
         adjustments: Adjustments,
         masks: [EditMask] = []
     ) throws -> CGImage {
-        let bytesPerRow = try validatedRowBytes(
-            width: width, height: height, rowStridePixels: rowStridePixels)
-        guard let romm = CGColorSpace(name: CGColorSpace.rommrgb) else {
-            throw PortError.message("ROMM/ProPhoto 色彩空间不可用")
+        guard width > 0, height > 0, rowStridePixels >= width else {
+            throw PortError.message("Layer 2 输入尺寸无效")
         }
-        let activeMasks = try validatedMasks(masks)
-        if (!adjustments.enabled || adjustments.isNeutral) && activeMasks.isEmpty {
-            let copy = Data(bytes: raw, count: bytesPerRow * height)
-            return try makeImage(copy, width: width, height: height,
-                                 bytesPerRow: bytesPerRow, colour: romm)
-        }
-        let dst = try renderTexture(
-            raw: raw, width: width, height: height,
-            rowStridePixels: rowStridePixels, adjustments: adjustments,
-            activeMasks: activeMasks)
-        // Only previews read GPU pixels back into a CPU copy. The new
-        // full-size export goes from the GPU texture straight to Core Image.
-        let packedRow = width * 8
-        var rendered = Data(count: packedRow * height)
-        let region = MTLRegionMake2D(0, 0, width, height)
-        rendered.withUnsafeMutableBytes { bytes in
-            if let base = bytes.baseAddress {
-                dst.getBytes(base, bytesPerRow: packedRow,
-                             from: region, mipmapLevel: 0)
-            }
-        }
-        return try makeImage(rendered, width: width, height: height,
-                             bytesPerRow: packedRow, colour: romm)
-    }
-
-    /// Full-resolution encoding: never call getBytes or manufacture an
-    /// RGBA16 CGImage/UIImage. Core Image consumes the same device texture
-    /// that the unmodified macOS Layer2 shader just produced.
-    /// This avoids an extra 48MB (6MP) / 100MB (12.5MP) CPU pixel copy.
-    func export(
-        raw: UnsafePointer<UInt16>,
-        width: Int,
-        height: Int,
-        rowStridePixels: Int,
-        adjustments: Adjustments,
-        masks: [EditMask] = [],
-        jpeg: Bool
-    ) throws -> URL {
-        _ = try validatedRowBytes(
-            width: width, height: height, rowStridePixels: rowStridePixels)
-        let activeMasks = try validatedMasks(masks)
-        guard let romm = CGColorSpace(name: CGColorSpace.rommrgb),
-              let srgb = CGColorSpace(name: CGColorSpace.sRGB) else {
-            throw PortError.message("高清编码缺少 ProPhoto/sRGB 色彩空间")
-        }
-        // Purely neutral settings should use the spectral encoder's existing
-        // bypass instead of this GPU export entrypoint.
-        guard (adjustments.enabled && !adjustments.isNeutral) ||
-              !activeMasks.isEmpty else {
-            throw PortError.message("中性调色请使用原版光谱高清导出路径")
-        }
-        // First iPhone trial: fully graded 6MP JPEG only. Multiple
-        // original-Metal tests proved the current PNG encoders can produce
-        // transparent-black files. Never silently save corrupted output.
-        guard jpeg else {
-            throw PortError.message(
-                "调色 PNG 尚未通过像素及透明度测试。当前请导出 6MP JPEG。")
-        }
-        let dst = try renderTexture(
-            raw: raw, width: width, height: height,
-            rowStridePixels: rowStridePixels,
-            adjustments: adjustments, activeMasks: activeMasks)
-        guard let sampled = CIImage(
-            mtlTexture: dst, options: [.colorSpace: romm]
-        ) else {
-            throw PortError.message("无法将 Metal JPEG 输出交给 Core Image")
-        }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SpectraPort-layer2-GPU-" + UUID().uuidString)
-            .appendingPathExtension("jpg")
-        do {
-            try exportContext.writeJPEGRepresentation(
-                of: sampled.settingAlphaOne(in: sampled.extent),
-                to: url, colorSpace: srgb, options: [:])
-        } catch {
-            try? FileManager.default.removeItem(at: url)
-            throw PortError.message(
-                "Metal JPEG 高清编码失败：" + error.localizedDescription)
-        }
-        guard let bytes = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              bytes > 0 else {
-            try? FileManager.default.removeItem(at: url)
-            throw PortError.message("Metal 直连高清导出的文件为空")
-        }
-        return url
-    }
-
-    private func validatedRowBytes(
-        width: Int, height: Int, rowStridePixels: Int
-    ) throws -> Int {
-        guard width > 0, height > 0, rowStridePixels >= width,
-              rowStridePixels <= Int.max / 8,
-              height <= Int.max / (rowStridePixels * 8) else {
-            throw PortError.message("Layer 2 输入尺寸或行跨度无效")
-        }
-        let bytesPerRow = rowStridePixels * 8
+        let bytesPerRow = rowStridePixels * MemoryLayout<UInt16>.stride * 4
         let length = bytesPerRow * height
         guard length > 0, length < 250_000_000 else {
             throw PortError.message("Layer 2 图像超出内存安全上限")
         }
-        return bytesPerRow
-    }
+        guard let romm = CGColorSpace(name: CGColorSpace.rommrgb) else {
+            throw PortError.message("ROMM/ProPhoto 色彩空间不可用")
+        }
 
-    private func validatedMasks(_ masks: [EditMask]) throws -> [EditMask] {
-        let active = masks.filter { $0.enabled && !$0.isEmpty && $0.amount > 0 }
-        guard active.count <= EditMask.maxCount else {
+        // Local masks run through the identical desktop kernel; unsupported
+        // brush rasters must fail explicitly rather than silently appearing
+        // to work without coverage.
+        let activeMasks = masks.filter {
+            $0.enabled && !$0.isEmpty && $0.amount > 0
+        }
+        guard activeMasks.count <= EditMask.maxCount else {
             throw PortError.message("局部蒙版超出原版最多 8 个的限制")
         }
-        guard active.allSatisfy({
-            $0.components.count <= EditMask.maxComponents
-        }) else {
+        guard activeMasks.allSatisfy({ $0.components.count <= EditMask.maxComponents }) else {
             throw PortError.message("单个局部蒙版超出最多 6 个形状的限制")
         }
-        guard !active.contains(where: { $0.needsRaster }) else {
-            throw PortError.message("画笔蒙版需要笔刷纹理，当前版本暂未开放")
+        guard !activeMasks.contains(where: { $0.needsRaster }) else {
+            throw PortError.message("画笔蒙版需要独立笔刷纹理，当前测试版暂未启用")
         }
-        return active
-    }
 
-    /// The exact macOS Layer2 Metal kernel. Preview and export call it
-    /// with the same uniform layout, curves and analytic mask buffers.
-    private func renderTexture(
-        raw: UnsafePointer<UInt16>,
-        width: Int,
-        height: Int,
-        rowStridePixels: Int,
-        adjustments: Adjustments,
-        activeMasks: [EditMask]
-    ) throws -> MTLTexture {
-        let bytesPerRow = try validatedRowBytes(
-            width: width, height: height, rowStridePixels: rowStridePixels)
+        // Exactly neutral Layer 2 must preserve every source byte, avoiding
+        // even one UNORM sample/quantization round-trip.
+        if (!adjustments.enabled || adjustments.isNeutral) && activeMasks.isEmpty {
+            let copy = Data(bytes: raw, count: length)
+            return try makeImage(copy, width: width, height: height,
+                                 bytesPerRow: bytesPerRow, colour: romm)
+        }
+
         let desc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba16Unorm, width: width, height: height,
             mipmapped: false)
@@ -296,7 +197,18 @@ final class DesktopLayer2Processor {
                 (cmd.error?.localizedDescription ?? "unknown Metal error"))
         }
 
-        return dst
+        // The original output stride may be padded. The adjusted CGImage
+        // uses tight rows; exporter and preview read the same bytes.
+        let packedRow = width * 8
+        var rendered = Data(count: packedRow * height)
+        rendered.withUnsafeMutableBytes { bytes in
+            if let base = bytes.baseAddress {
+                dst.getBytes(base, bytesPerRow: packedRow, from: region,
+                             mipmapLevel: 0)
+            }
+        }
+        return try makeImage(rendered, width: width, height: height,
+                             bytesPerRow: packedRow, colour: romm)
     }
 
     private func makeImage(_ pixels: Data, width: Int, height: Int,

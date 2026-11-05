@@ -1,5 +1,4 @@
 import CoreGraphics
-import ImageIO
 import Foundation
 import Metal
 
@@ -173,57 +172,6 @@ check(abs(channel(paddedImage, 4, 4, 0) - Double(32768)/65535) < 1e-5,
       "native 16-bit padded row input bypass preserves source pixels")
 
 print("METAL_GPU_FIXTURES_PASS: neutral, exposure, red curve, radial, linear, luminance, colour range, colour balance, vignette, inverse mask, padded rows")
-
-// Build21 first-device GPU-direct JPEG. Decode the written file and
-// verify dimensions, opaque alpha and fixed Mac Metal colour numerically.
-var exportGrade = Adjustments.default
-exportGrade.exposure = 0.5
-let jpegURL = try input.withUnsafeBufferPointer { pixels in
-    try processor.export(
-        raw: pixels.baseAddress!, width: width, height: height,
-        rowStridePixels: width, adjustments: exportGrade, jpeg: true)
-}
-defer { try? FileManager.default.removeItem(at: jpegURL) }
-check(jpegURL.pathExtension == "jpg", "GPU JPEG file type")
-check(((try? jpegURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0,
-      "GPU JPEG encoded bytes")
-guard let jpegSource = CGImageSourceCreateWithURL(jpegURL as CFURL, nil),
-      let jpegPhoto = CGImageSourceCreateImageAtIndex(jpegSource, 0, nil) else {
-    fatalError("Build21 GPU JPEG failed to decode")
-}
-check(jpegPhoto.width == width && jpegPhoto.height == height,
-      "GPU JPEG dimensions")
-let cs = CGColorSpace(name: CGColorSpace.sRGB)!
-let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: width * height * 4)
-defer { bytes.deallocate() }
-let info = CGBitmapInfo.byteOrder32Big.union(
-    CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
-guard let ctx = CGContext(
-    data: bytes, width: width, height: height, bitsPerComponent: 8,
-    bytesPerRow: width * 4, space: cs, bitmapInfo: info.rawValue
-) else { fatalError("GPU JPEG test context unavailable") }
-ctx.draw(jpegPhoto, in: CGRect(x: 0, y: 0, width: width, height: height))
-let mid = (2 * width + 2) * 4
-check(bytes[mid + 3] >= 250, "GPU JPEG must be opaque")
-for k in 0..<3 {
-    check(abs(Double(bytes[mid + k]) / 255.0 - 0.651) < 0.07,
-          "GPU JPEG expected Mac ROMM to sRGB colour")
-}
-
-// Graded PNG currently fails alpha correctness on the macOS Metal fixture.
-// Verify that callers receive an explicit refusal, never a corrupt image.
-do {
-    let pngURL = try input.withUnsafeBufferPointer { pixels in
-        try processor.export(
-            raw: pixels.baseAddress!, width: width, height: height,
-            rowStridePixels: width, adjustments: exportGrade, jpeg: false)
-    }
-    try? FileManager.default.removeItem(at: pngURL)
-    fatalError("Unsafe Layer2 PNG must be refused in Build21")
-} catch PortError.message(let reason) {
-    check(reason.contains("PNG"), "guard provides clear PNG error")
-}
-print("BUILD21_GPU_JPEG_PASS: original Metal → opaque sRGB JPEG; unsafe PNG refused")
 
 // Real original-kernel pixel path at the two supported camera-size tiers.
 // The runner is not the iPhone's thermal/memory environment; success is

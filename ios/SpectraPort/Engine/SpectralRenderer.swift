@@ -165,11 +165,6 @@ final class SpectralRenderer {
                 "调色测试版暂时仅支持安全档 6MP 导出。请在更多→导出中切换安全档，12.5MP 将在真机内存测试后开放。"
             )
         }
-        if needsDesktopLayer2(settings) && format == .png {
-            throw PortError.message(
-                "当前调色测试版只开放 JPEG 高清导出。PNG 透明度测试未通过，修复前禁止生成损坏文件。"
-            )
-        }
 
         // The preview's native caches can be large. Release them *before*
         // decoding the high-resolution frame. A later Apply opens preview
@@ -216,18 +211,15 @@ final class SpectralRenderer {
                 throw PortError.message("无法获取 Layer 2 原始印相像素")
             }
             report("应用 macOS 同源 Layer 2 调色与曲线…")
-            // Full-size Layer 2 now encodes from the original Metal output
-            // texture: no additional whole-frame RGBA16 CPU readback buffer.
-            // Preview intentionally keeps its existing CGImage path.
-            url = try gradeProcessor().export(
+            let graded = try gradeProcessor().apply(
                 raw: raw,
                 width: Int(output.width),
                 height: Int(output.height),
                 rowStridePixels: Int(output.row_stride_px),
                 adjustments: settings.adjustments,
-                masks: settings.masks,
-                jpeg: format == .jpeg
+                masks: settings.masks
             )
+            url = try FullSizeExporter.write(graded, format: format)
         } else {
             // Identical to the original port when Layer 2 is neutral.
             url = try FullSizeExporter.write(output, format: format)

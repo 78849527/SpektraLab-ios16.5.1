@@ -119,18 +119,21 @@ selection and brush rasterisation or visibly mark unsupported; compare
 ProPhoto/D65 transforms and matched default/autoexposure/filter parameters
 against Windows and macOS on the same image. These gates are not complete.
 
-## Build 21 (0.14.1 beta 2): safe JPEG export first
+## Build 21: revert experimental export and protect Build 20 behaviour
 
-- Independent bundle identifier allows Build 19 and Build 20 to remain installed.
-- Full-size graded JPEG passes original macOS Metal→CIImage→sRGB encoding
-  without the 8-bytes-per-pixel full-frame GPU-to-CPU copy (~48MB at 6MP).
-- Multiple pixel fixtures exposed that graded PNG was transparent black with
-  several encoding approaches, including Core Image and Core Graphics.
-  Graded PNG is **explicitly blocked** rather than silently writing damaged
-  files. Neutral source export still uses the unchanged original encoder.
-- 12.5MP graded export remains gated until 6MP succeeds on a real A15 phone.
-- Automatic tests must decode the JPEG, verify 6MP kernel behaviour, opaque
-  output and fixed reference colours, plus assert that graded PNG refuses.
-- First-device trial: import photo → global grading + RGB curves → 6MP JPEG,
-  inspect saved JPEG, then repeat five exports to assess memory and stability.
-- The preview-area local mask interaction remains deferred.
+- The user confirmed that Build 20 exports JPEG and PNG at both the
+  6MP and 12.5MP output settings on an actual iPhone.
+- The 12.5MP post-print **Layer2** gate is distinct: Build 20's original
+  source refuses high-tier output when grading/masks are active.
+  Successful high-tier non-graded exports do not by themselves test this path.
+- Revert the Build21 experimental CIImage(mtlTexture:) export change.
+  CI fixture PNG tests of the experimental candidate produced transparent
+  black; they do not establish any defect in the Build20 shipping exporter.
+- Restore the exact Build20 DesktopLayer2Processor and SpectralRenderer
+  implementations; preserve both their original graded and neutral
+  JPEG/PNG encoding paths and existing 12.5MP Layer2 safety gate.
+- GPU pixel fixtures remain for tonal operations, masks, padded rows,
+  6MP and 12.2MP shaders, and desktop numeric comparisons.
+- Do not publish Build21 as an export improvement: follow real-device
+  findings first. Only reintroduce memory optimisation if independent
+  reference TIFF/PNG/JPEG tests prove correct pixels, alpha and colour.
