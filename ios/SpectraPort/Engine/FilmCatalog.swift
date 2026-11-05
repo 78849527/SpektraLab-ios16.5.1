@@ -60,11 +60,13 @@ struct FilmSettings: Equatable, Codable {
     let softness: Double
     /// Desktop's independent post-print Layer 2 (zero = byte-identical).
     let adjustments: Adjustments
+    let masks: [EditMask]
 
     init(filmStock: String, printStock: String, exposureEV: Double,
          grainAmount: Double, halationAmount: Double, printExposure: Double,
          magentaShift: Double, yellowShift: Double, softness: Double = 0,
-         adjustments: Adjustments = .default) {
+         adjustments: Adjustments = .default,
+         masks: [EditMask] = []) {
         self.filmStock = filmStock
         self.printStock = printStock
         self.exposureEV = exposureEV
@@ -75,11 +77,12 @@ struct FilmSettings: Equatable, Codable {
         self.yellowShift = yellowShift
         self.softness = softness
         self.adjustments = adjustments
+        self.masks = masks
     }
 
     private enum CodingKeys: String, CodingKey {
         case filmStock, printStock, exposureEV, grainAmount, halationAmount,
-             printExposure, magentaShift, yellowShift, softness, adjustments
+             printExposure, magentaShift, yellowShift, softness, adjustments, masks
     }
 
     init(from decoder: Decoder) throws {
@@ -97,6 +100,9 @@ struct FilmSettings: Equatable, Codable {
         adjustments = try values.decodeIfPresent(
             Adjustments.self, forKey: .adjustments
         ) ?? .default
+        masks = try values.decodeIfPresent(
+            [EditMask].self, forKey: .masks
+        ) ?? []
     }
 
     func deltaJSON(striped: Bool = false) throws -> String {
