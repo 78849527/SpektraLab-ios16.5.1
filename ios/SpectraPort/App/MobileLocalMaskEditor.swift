@@ -6,6 +6,7 @@ import SwiftUI
 /// until its per-mask raster is implemented and tested.
 struct MobileLocalMaskEditor: View {
     @Binding var masks: [EditMask]
+    let imageAspectRatio: CGFloat
     @State private var selectedID: UUID?
 
     private var selectedIndex: Int? {
@@ -41,21 +42,6 @@ struct MobileLocalMaskEditor: View {
         guard masks.indices.contains(i) else { return }
         masks.remove(at: i)
         selectedID = masks.first?.id
-    }
-
-    private func setPosition(_ i: Int, _ p: CGPoint, beginning: Bool) {
-        guard masks.indices.contains(i), !masks[i].components.isEmpty else { return }
-        let x = max(0, min(1, p.x))
-        let y = max(0, min(1, p.y))
-        switch masks[i].components[0].kind {
-        case .linearGradient:
-            if beginning { masks[i].components[0].a = CGPoint(x: x, y: y) }
-            masks[i].components[0].b = CGPoint(x: x, y: y)
-        case .radialGradient:
-            masks[i].components[0].a = CGPoint(x: x, y: y)
-        default:
-            break
-        }
     }
 
     var body: some View {
@@ -136,7 +122,10 @@ struct MobileLocalMaskEditor: View {
                         .tint(DarkroomStyle.accent)
 
                     if kind == .linearGradient || kind == .radialGradient {
-                        MaskGeometryPad(component: $masks[i].components[0])
+                        MaskGeometryPad(
+                            component: $masks[i].components[0],
+                            imageAspectRatio: imageAspectRatio
+                        )
                             .frame(height: 178)
                         if kind == .radialGradient {
                             DarkroomControlRow(
@@ -222,61 +211,77 @@ struct MobileLocalMaskEditor: View {
 
 private struct MaskGeometryPad: View {
     @Binding var component: MaskComponent
+    let imageAspectRatio: CGFloat
     @State private var dragStart: CGPoint?
 
     var body: some View {
         GeometryReader { area in
-            let width = max(1, area.size.width)
-            let height = max(1, area.size.height)
-            Canvas { ctx, size in
-                var thirds = Path()
-                for v in [0.333, 0.666] {
-                    let a = CGFloat(v)
-                    thirds.move(to: CGPoint(x: size.width * a, y: 0))
-                    thirds.addLine(to: CGPoint(x: size.width * a, y: size.height))
-                    thirds.move(to: CGPoint(x: 0, y: size.height * a))
-                    thirds.addLine(to: CGPoint(x: size.width, y: size.height * a))
+            let available = area.size
+            let aspect = max(0.1, min(10, imageAspectRatio))
+            let width = min(available.width, available.height * aspect)
+            let height = width / aspect
+            let origin = CGPoint(
+                x: (available.width - width) / 2,
+                y: (available.height - height) / 2
+            )
+            let rect = CGRect(origin: origin, size: CGSize(width: width, height: height))
+            Canvas { ctx, _ in
+                ctx.fill(Path(rect), with: .color(.black.opacity(0.55)))
+                var grid = Path()
+                for v in [CGFloat(1.0/3.0), CGFloat(2.0/3.0)] {
+                    grid.move(to: CGPoint(x: origin.x + width * v, y: origin.y))
+                    grid.addLine(to: CGPoint(x: origin.x + width * v, y: origin.y + height))
+                    grid.move(to: CGPoint(x: origin.x, y: origin.y + height * v))
+                    grid.addLine(to: CGPoint(x: origin.x + width, y: origin.y + height * v))
                 }
-                ctx.stroke(thirds, with: .color(.gray.opacity(0.40)), lineWidth: 1)
+                ctx.stroke(grid, with: .color(.gray.opacity(0.45)), lineWidth: 1)
+
                 let gold = DarkroomStyle.accent
+                func at(_ p: CGPoint) -> CGPoint {
+                    CGPoint(x: origin.x + p.x * width,
+                            y: origin.y + p.y * height)
+                }
                 if component.kind == .linearGradient {
                     var path = Path()
-                    path.move(to: CGPoint(x: component.a.x * size.width,
-                                          y: component.a.y * size.height))
-                    path.addLine(to: CGPoint(x: component.b.x * size.width,
-                                             y: component.b.y * size.height))
+                    path.move(to: at(component.a))
+                    path.addLine(to: at(component.b))
                     ctx.stroke(path, with: .color(gold), lineWidth: 2)
                     for p in [component.a, component.b] {
-                        let rect = CGRect(x: p.x * size.width - 5,
-                                          y: p.y * size.height - 5,
-                                          width: 10, height: 10)
-                        ctx.fill(Path(ellipseIn: rect), with: .color(gold))
+                        let center = at(p)
+                        let dot = CGRect(x: center.x - 5, y: center.y - 5,
+                                         width: 10, height: 10)
+                        ctx.fill(Path(ellipseIn: dot), with: .color(gold))
                     }
-                } else {
+                } else if component.kind == .radialGradient {
+                    // The original Mac shader measures radii in long-edge
+                    // units. Convert to photo pixels, not the panel's aspect.
                     let r = component.radii
-                    let rect = CGRect(
-                        x: component.a.x * size.width - r.width * size.width,
-                        y: component.a.y * size.height - r.height * size.height,
-                        width: 2 * r.width * size.width,
-                        height: 2 * r.height * size.height
+                    let rx = aspect >= 1 ? r.width * width : r.width / aspect * width
+                    let ry = aspect >= 1 ? r.height * aspect * height : r.height * height
+                    let c = at(component.a)
+                    let ring = CGRect(
+                        x: c.x - rx, y: c.y - ry,
+                        width: rx * 2, height: ry * 2
                     )
-                    ctx.stroke(Path(ellipseIn: rect), with: .color(gold),
+                    ctx.stroke(Path(ellipseIn: ring), with: .color(gold),
                                lineWidth: 2)
-                    let rect2 = CGRect(x: component.a.x * size.width - 4,
-                                       y: component.a.y * size.height - 4,
-                                       width: 8, height: 8)
-                    ctx.fill(Path(ellipseIn: rect2), with: .color(gold))
+                    ctx.fill(Path(ellipseIn: CGRect(
+                        x: c.x - 4, y: c.y - 4, width: 8, height: 8
+                    )), with: .color(gold))
                 }
+                ctx.stroke(Path(rect), with: .color(.gray.opacity(0.45)),
+                           lineWidth: 1)
             }
-            .frame(width: width, height: height)
-            .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 10))
+            .frame(width: available.width, height: available.height)
+            .background(DarkroomStyle.raised,
+                        in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
                         let p = CGPoint(
-                            x: max(0, min(1, drag.location.x / width)),
-                            y: max(0, min(1, drag.location.y / height))
+                            x: max(0, min(1, (drag.location.x - origin.x) / width)),
+                            y: max(0, min(1, (drag.location.y - origin.y) / height))
                         )
                         if component.kind == .linearGradient {
                             if dragStart == nil {
