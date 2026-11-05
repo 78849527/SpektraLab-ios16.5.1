@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.8.0 / Build 9
+## Current iOS build: v0.8.1 / Build 10
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -51,6 +51,18 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   a realtime on/off switch remain available.
 - Not a 60fps shader overlay: normal ~200-300 ms original GPU film render is
   performed after a gesture pauses, with the original negative caching.
+- v0.8.1 effect verification: the iOS app now passes the original engine's
+  `product_defaults=true` at `spk_open`, disabling print auto-compensation
+  so camera exposure has a visible effect. It also sets the native
+  `filter_shift_scale=40` to make M/Y slider units meaningful (previously
+  only 1 CC per unit, below obvious visual thresholds). This changes the
+  rendered look versus earlier iOS versions; stock profiles and C++ algorithms
+  are unchanged.
+- The app reads C++ parameters with `spk_get_params` before accepting a
+  render and checks all six slider values, two stock IDs, and filter scale.
+  The preview can switch between previous and current film render, showing
+  sample mean RGB pixel change over an 80x80 sRGB sample. This is diagnostic,
+  not perceptual Delta E or a quality score.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
