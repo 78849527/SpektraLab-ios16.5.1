@@ -50,6 +50,26 @@ jobs:
           xcrun --sdk iphoneos metallib /tmp/spectraport-original-layer2-ios16.air \
             -o /tmp/spectraport-original-layer2.metallib
           test -s /tmp/spectraport-original-layer2.metallib
+      - name: Compile original Metal pixel fixture harness
+        run: |
+          swiftc -swift-version 5 -emit-executable \
+            ios/SpectraPort/Engine/DesktopCurveMath.swift \
+            ios/SpectraPort/Engine/DesktopAdjustments.swift \
+            ios/SpectraPort/Engine/DesktopMasks.swift \
+            ios/SpectraPort/Engine/DesktopLayer2Processor.swift \
+            ios/tests/metal/main.swift \
+            -framework Metal -framework CoreGraphics \
+            -o /tmp/spectraport-layer2-pixel-fixtures
+      - name: Execute macOS Metal fixtures (report unsupported runner explicitly)
+        run: |
+          /tmp/spectraport-layer2-pixel-fixtures \
+            /tmp/spectraport-original-layer2.metallib | tee /tmp/layer2-fixture-result.txt
+          if grep -q 'SKIPPED_GPU_RUNTIME' /tmp/layer2-fixture-result.txt; then
+            echo "NOTE: No GPU exposed to CI; only shader compile and Swift model validation passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            grep -q 'METAL_GPU_FIXTURES_PASS' /tmp/layer2-fixture-result.txt
+            echo "GPU pixel fixtures passed on macOS runner" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Build original spectral engine and bundled Mac Layer2 library
