@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.8.1 / Build 10
+## Current iOS build: v0.9.0 / Build 11
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -63,6 +63,21 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   The preview can switch between previous and current film render, showing
   sample mean RGB pixel change over an 80x80 sRGB sample. This is diagnostic,
   not perceptual Delta E or a quality score.
+- v0.9.0 local detail inspection: explicitly re-renders the current photo
+  at the original engine's full tier, with a 12.5MP A15 memory ceiling,
+  using the same exact film/paper parameters. Opens a UIKit-powered local
+  viewer with pinch zoom, pan, double-tap-to-zoom. This is not an enlarged
+  1440px preview; >12.5MP source photos are downsampled and labeled.
+  The detailed image is produced on demand, not continuously at 12.5MP.
+- Halation correction: the engine's halation_amount is physically an area
+  multiplier of back-reflection, not a generic halo-brightness knob. At zero,
+  the iOS app now also sets halation_active=false, disabling both the base
+  reflections and scattering. C++ parameter readback verifies the switch.
+  On ordinary scenes, halation may be hard to see even with a positive setting;
+  inspect high-contrast bright lamp edges rather than global RGB difference.
+- All photo processing, measured profiles, Metal compute and user presets are
+  local and offline. Download/update and possibly iCloud-backed Photos assets
+  may require connectivity; the app itself has no photo upload API.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
