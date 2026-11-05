@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.11.0 / Build 14
+## Current iOS build: v0.11.1 / Build 15
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -113,6 +113,14 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - Fixes UIKit zoom state leaking into subsequent photos, and image decoder
   overstepping the selected 6MP/12.5MP ceiling. Full-sized source pixels
   are retained when at or below the ceiling.
+- v0.11.1: crash-hardening for camera launch: verify NSCameraUsageDescription
+  before touching capture authorization, and bind AVCaptureVideoPreviewLayer
+  to the configured capture session only when it is running. CI checks the
+  *built* Info.plist for the usage key. This does not by itself prove any
+  specific device's crash cause: on-device testing/crash logs remain needed.
+- Photo preview has an explicit "整张" fit-to-frame button (scale + center)
+  and double-tap restore, with no bouncing below minimum zoom. Camera and
+  Photos-picker source changes also reset the embedded viewer.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
