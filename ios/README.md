@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.9.0 / Build 11
+## Current iOS build: v0.9.1 / Build 12
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -78,6 +78,12 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - All photo processing, measured profiles, Metal compute and user presets are
   local and offline. Download/update and possibly iCloud-backed Photos assets
   may require connectivity; the app itself has no photo upload API.
+- v0.9.1: photo paper selection mirrors film stock selection, with swipeable
+  horizontally scrolling cards, Kodak/Fujifilm category filters and a complete
+  dropdown fallback; source data remains measured original paper JSON.
+- All +/- parameter buttons use >=44pt hit targets, explicit step boundaries,
+  and integer-step arithmetic (avoids rounding drift for 0.05 M/Y and print
+  exposure adjustments). The controls share the existing live engine bindings.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
