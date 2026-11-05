@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.12.0 / Build 16
+## Current iOS build: v0.12.1 / Build 17
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -96,13 +96,8 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   User authorization is requested only when saving. When permission is denied,
   the app reports why instead of silently failing. It retains the export file
   for re-sharing, and never moves it when writing the Photos asset.
-- v0.11.0: AVFoundation back-camera workflow with JPEG and supported HEIF,
-  Bayer RAW/DNG and Apple ProRAW modes. RAW modes are shown only when the
-  current camera reports compatible pixel formats. RAW DNG is preserved under
-  app-local Application Support and offered to export/share separately.
-  Core Image CIRAWFilter develops a memory-bounded scene image into sRGB JPEG
-  for the original SpektraLab spectral engine; RAW mosaics are not sent into
-  the engine directly. Capturing returns to the same editor and presets.
+- v0.11.0 historical: experimental RAW capture existed briefly but was
+  removed completely in v0.12.1 after on-device instability.
 - Added "降低数码锐利感" (0..1) input pre-processing. Core Image subtly
   reduces excessive spatial high-frequency contrast using Gaussian low-pass
   mixed into the captured image *before* measured film and paper rendering;
@@ -121,15 +116,19 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - Photo preview has an explicit "整张" fit-to-frame button (scale + center)
   and double-tap restore, with no bouncing below minimum zoom. Camera and
   Photos-picker source changes also reset the embedded viewer.
+- v0.12.1 simplifies capture: iOS owns the *entire* native
+  UIImagePickerController camera screen, including framing, shutter,
+  flash (when available), Cancel, Retake and Use Photo. No custom overlays,
+  bottom black empty band or capture framing transform. Captured JPEG goes
+  straight to the existing original spectral editor. The experimental
+  custom AVFoundation camera and RAW developer were deleted from the app,
+  not merely hidden. RAW/ProRAW is not available in this version.
 - v0.12.0 redesigned photo-first iPhone editor: image occupies about 61.5%
   of the area below the navigation bar, the film/paper/adjustment/preset dock
   scrolls independently below, and five main entries are fixed at bottom:
   Library / Capture / Edit / Presets / More. No top selection tabs.
-- Default Capture uses Apple's own UIImagePickerController for stable JPEG
-  capture, custom visible shutter and darkroom-styled overlay. The experimental
-  advanced AVFoundation RAW/ProRAW path is kept behind an explicit option,
-  and it is not claimed to be stable without device testing. Opening camera
-  first releases native spectral GPU textures on the engine's serial queue.
+- Opening the native camera first releases native spectral GPU textures on
+  the engine's serial queue.
 - Every completed live preview resets the zoom by rebuilding UIScrollView;
   the in-preview fit button also forces a fresh view. The in-preview + / -
   actions remain distinct from pinch and double-tap zoom. The 12.5MP on-
