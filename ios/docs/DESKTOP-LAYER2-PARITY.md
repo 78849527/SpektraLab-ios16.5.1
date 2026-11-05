@@ -123,14 +123,19 @@ against Windows and macOS on the same image. These gates are not complete.
 
 - Keep prior Build 20 unchanged. Build 21 has a distinct bundle identifier,
   allowing Build 19, Build 20 and Build 21 to coexist for testing.
-- Full-size graded JPEG/PNG goes from the original Layer2 output Metal
+- Full-size graded **JPEG** goes from the original Layer2 output Metal
   texture directly into CIImage(mtlTexture:options:) with ROMM colour
-  tagging and a Metal-device Core Image context. This avoids the entire
-  8-bytes/pixel GPU-to-CPU readback and 16-bit CGImage allocation
-  (approximately 48MB at 6MP and 100MB at 12.5MP).
+  tagging and a Metal-device Core Image context. It avoids the redundant
+  8-bytes/pixel GPU-to-CPU readback and CGImage allocation (48MB at 6MP).
+- The first GPU-direct PNG candidate produced transparent black output on
+  the macOS original Metal fixture. That candidate has been rejected.
+  **PNG deliberately keeps the Build20 16-bit CGImage/CPU readback path**
+  until a GPU-direct PNG encoder can prove pixel and alpha correctness.
+  Never claim PNG enjoys the same memory improvement as JPEG.
 - Preview still uses the proven readback path; native C++ optical-film
   simulation and original desktop Metal shader are unchanged.
-- Build21's same-source GPU JPEG and PNG pixel fixtures must pass on CI.
+- Build21 tests must decode both GPU-JPEG and CPU-safe-PNG, verify
+  nontransparent output and require close matching sRGB center samples.
 - The 12.5MP post-print export tier remains disabled pending A15 memory
   validation. Do not interpret a Mac-runner pass as iPhone stability.
 - Test 6MP JPEG and PNG with global grade, RGB curves and radial mask,
