@@ -318,6 +318,21 @@ private enum AdjustmentGroup: String, CaseIterable {
     case print = "暗房冲印"
 }
 
+private enum PaperBrowseFilter: String, CaseIterable {
+    case all = "全部"
+    case kodak = "Kodak"
+    case fuji = "Fujifilm"
+
+    func accepts(_ stock: FilmCatalog.Stock) -> Bool {
+        let name = stock.name.lowercased()
+        switch self {
+        case .all: return true
+        case .kodak: return name.contains("kodak")
+        case .fuji: return name.contains("fujifilm")
+        }
+    }
+}
+
 struct EditorView: View {
     let onBack: () -> Void
 
@@ -334,6 +349,7 @@ struct EditorView: View {
     @State private var detailInspection: DetailInspection?
 
     @State private var filmFilter: FilmBrowseFilter = .all
+    @State private var paperFilter: PaperBrowseFilter = .all
     @State private var cameraExpanded = true
     @State private var darkroomExpanded = false
     @State private var presetsExpanded = false
@@ -343,6 +359,10 @@ struct EditorView: View {
 
     private var filteredFilms: [FilmCatalog.Stock] {
         FilmCatalog.films.filter { filmFilter.accepts($0) }
+    }
+
+    private var filteredPapers: [FilmCatalog.Stock] {
+        FilmCatalog.papers.filter { paperFilter.accepts($0) }
     }
 
     private var canExport: Bool {
@@ -395,6 +415,8 @@ struct EditorView: View {
         Live debounce: 240 ms
         Halation amount means: back-reflection area; zero disables whole halation node
         High-res detail inspector: 12.5MP maximum, on demand, local only
+        Print paper selector: horizontal swipe + dropdown
+        Controls: 44-point tap targets and integer step indexes
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
@@ -636,37 +658,93 @@ struct EditorView: View {
 
     private var paperSection: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 11) {
-                DarkroomSectionTitle(number: "02", title: "相纸", subtitle: "下拉选择")
-                Menu {
-                    ForEach(FilmCatalog.papers) { stock in
-                        Button {
-                            model.paperID = stock.id
-                        } label: {
-                            if stock.id == model.paperID {
-                                Label(stock.name, systemImage: "checkmark")
-                            } else {
-                                Text(stock.name)
+            VStack(alignment: .leading, spacing: 13) {
+                DarkroomSectionTitle(number: "02", title: "相纸", subtitle: "左右滑动选择")
+
+                HStack(spacing: 8) {
+                    Image(systemName: "square.stack.3d.up")
+                        .foregroundStyle(DarkroomStyle.accent)
+                    Text(activePaperName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DarkroomStyle.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer()
+                    Menu {
+                        ForEach(FilmCatalog.papers) { stock in
+                            Button {
+                                guard !model.isBusy else { return }
+                                model.paperID = stock.id
+                            } label: {
+                                if stock.id == model.paperID {
+                                    Label(stock.name, systemImage: "checkmark")
+                                } else {
+                                    Text(stock.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("列表", systemImage: "chevron.down")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(DarkroomStyle.accent)
+                    }
+                    .disabled(model.isBusy)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(PaperBrowseFilter.allCases, id: \.self) { filter in
+                            DarkroomChip(title: filter.rawValue,
+                                         selected: paperFilter == filter) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    paperFilter = filter
+                                }
                             }
                         }
                     }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "square.stack.3d.up")
-                            .foregroundStyle(DarkroomStyle.accent)
-                        Text(activePaperName)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(DarkroomStyle.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .foregroundStyle(DarkroomStyle.accent)
-                    }
-                    .padding(13)
-                    .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 10))
                 }
-                .disabled(model.isBusy)
+
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 10) {
+                            ForEach(filteredPapers) { stock in
+                                FilmStockCard(
+                                    name: stock.name,
+                                    selected: stock.id == model.paperID,
+                                    kind: "PHOTO PAPER"
+                                ) {
+                                    guard !model.isBusy, stock.id != model.paperID else { return }
+                                    model.paperID = stock.id
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        reader.scrollTo(stock.id, anchor: .center)
+                                    }
+                                }
+                                .id(stock.id)
+                                .disabled(model.isBusy)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .onAppear {
+                        reader.scrollTo(model.paperID, anchor: .center)
+                    }
+                    .onChange(of: model.paperID) { newValue in
+                        if filteredPapers.contains(where: { $0.id == newValue }) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                reader.scrollTo(newValue, anchor: .center)
+                            }
+                        }
+                    }
+                    .onChange(of: paperFilter) { _ in
+                        if filteredPapers.contains(where: { $0.id == model.paperID }) {
+                            reader.scrollTo(model.paperID, anchor: .center)
+                        }
+                    }
+                }
+
+                Text("使用原版测量相纸配置；选中后自动实时冲印。也可点击右上角「列表」选择。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
             }
         }
     }
