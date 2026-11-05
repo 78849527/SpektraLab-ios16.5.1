@@ -59,8 +59,10 @@ enum FullSizeExporter {
             throw PortError.message("原始照片尺寸异常，拒绝危险解码")
         }
         let fullEdge = max(width, height)
-        // Leave headroom for ImageIO thumbnail rounding on rotated images.
-        let factor = min(1.0, sqrt(Double(limit.pixelLimit) / Double(pixels)) * 0.975)
+        // Preserve native pixels when already under the selected ceiling.
+        // Reserve 6% pixel headroom only for a source that requires reduction.
+        let factor = pixels <= Int64(limit.pixelLimit)
+            ? 1.0 : sqrt(Double(limit.pixelLimit) * 0.94 / Double(pixels))
         let selectedEdge = max(64, Int(floor(Double(fullEdge) * factor)))
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
