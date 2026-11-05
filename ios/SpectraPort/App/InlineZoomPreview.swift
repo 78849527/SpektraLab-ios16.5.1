@@ -67,7 +67,8 @@ struct InlineZoomPreview: UIViewRepresentable {
         }
 
         func install(image: UIImage, in scroll: DetailImageScrollView,
-                     identifier: String, highRes: Bool) {
+                     identifier: String, highRes: Bool,
+                     lockToFit: Bool) {
             updatingProgrammatically = true
             let hadImage = scroll.picture.image != nil
             let oldFit = max(0.0001, scroll.minimumZoomScale)
@@ -85,6 +86,14 @@ struct InlineZoomPreview: UIViewRepresentable {
             if highRes { requestedForID = identifier }
             scroll.setImage(image)
             scroll.layoutIfNeeded()
+            // Local sliders and mask handles update their photo at 240ms
+            // intervals. The old image's zoom is not a valid input here.
+            // Hold *every* new preview exactly at the current viewport fit.
+            if lockToFit {
+                scroll.resetToFit()
+                updatingProgrammatically = false
+                return
+            }
             if hadImage, oldZoomFactor > 1.05 {
                 let desired = max(scroll.minimumZoomScale,
                                   min(scroll.maximumZoomScale,
@@ -128,6 +137,7 @@ struct InlineZoomPreview: UIViewRepresentable {
         // Prevent pinch/pan from changing the coordinate transform while
         // the SwiftUI overlay works in the photo's aspect-fit viewport.
         // Re-enable the original photo loupe immediately on exiting masks.
+        uiView.locksZoomToFit = maskEditing
         uiView.isScrollEnabled = !maskEditing
         uiView.pinchGestureRecognizer?.isEnabled = !maskEditing
         coordinator.doubleTapGesture?.isEnabled = !maskEditing
@@ -141,10 +151,12 @@ struct InlineZoomPreview: UIViewRepresentable {
             if let url = highResolutionURL,
                let full = UIImage(contentsOfFile: url.path) {
                 coordinator.install(image: full, in: uiView,
-                                    identifier: identifier, highRes: true)
+                                    identifier: identifier, highRes: true,
+                                    lockToFit: maskEditing)
             } else {
                 coordinator.install(image: preview, in: uiView,
-                                    identifier: identifier, highRes: false)
+                                    identifier: identifier, highRes: false,
+                                    lockToFit: maskEditing)
             }
         }
 
