@@ -25,6 +25,9 @@ final class EditorModel: ObservableObject {
     @Published var yellowShift = 0.0
 
     private var sourceData: Data?
+    private var photoID = UUID()
+
+    var hasPhoto: Bool { sourceData != nil }
     private let renderer = SpectralRenderer()
 
     func markDirty() {
@@ -61,6 +64,7 @@ final class EditorModel: ObservableObject {
                     throw PortError.message("照片读取失败")
                 }
                 sourceData = data
+                photoID = UUID()
                 isBusy = false
                 applySettings()
             } catch {
@@ -80,7 +84,7 @@ final class EditorModel: ObservableObject {
         isDirty = false
         isBusy = true
         status = "正在使用原版光谱引擎渲染…"
-        renderer.render(data: data, settings: settings) { [weak self] result in
+        renderer.render(data: data, photoID: photoID, settings: settings) { [weak self] result in
             guard let self else { return }
             self.isBusy = false
             switch result {
@@ -104,6 +108,7 @@ struct EditorView: View {
     @StateObject private var model = EditorModel()
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var copiedStatus = false
+    @State private var shareItem: ShareItem?
 
     private func copyStatus() {
         let metalName = MTLCreateSystemDefaultDevice()?.name ?? "Metal unavailable"
@@ -132,11 +137,24 @@ struct EditorView: View {
         Magenta shift: \(model.magentaShift)
         Yellow shift: \(model.yellowShift)
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")
+        Engine: persistent session, spk_reprint
         Pending edits: \(model.isDirty)
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
         copiedStatus = true
+    }
+
+    private func exportPreview(_ format: PreviewExporter.Format) {
+        guard let image = model.processed, !model.isBusy, !model.isDirty else {
+            model.status = "请先应用全部设置，然后再导出"
+            return
+        }
+        do {
+            shareItem = ShareItem(url: try PreviewExporter.write(image, format: format))
+        } catch {
+            model.status = "导出预览失败：\(error.localizedDescription)"
+        }
     }
 
     private func sliderRow(_ name: String, value: Binding<Double>,
@@ -199,6 +217,14 @@ struct EditorView: View {
                         .disabled(model.processed == nil || model.isBusy)
                     }
 
+                    Menu {
+                        Button("导出 JPEG（sRGB）") { exportPreview(.jpeg) }
+                        Button("导出 PNG（sRGB）") { exportPreview(.png) }
+                    } label: {
+                        Label("分享／保存当前预览（最长边 1440px）", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(model.isBusy || model.isDirty || model.processed == nil)
+
                     if model.isBusy { ProgressView("原版引擎处理中…") }
                     Text(model.status)
                         .font(.footnote)
@@ -242,9 +268,9 @@ struct EditorView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty || model.processed == nil)
+                    .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty || !model.hasPhoto)
 
-                    Text("胶片／相纸与参数均由原版引擎计算。调整后点击应用，预览最长边 1440px；尚未支持全分辨率导出。")
+                    Text("胶片／相纸与参数均由原版引擎计算。调整后点击应用；可导出 1440px 的 JPEG/PNG 预览。原图全分辨率导出尚未支持。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 .padding()
@@ -270,6 +296,9 @@ struct EditorView: View {
             .onChange(of: model.printExposure) { _ in model.markDirty() }
             .onChange(of: model.magentaShift) { _ in model.markDirty() }
             .onChange(of: model.yellowShift) { _ in model.markDirty() }
+            .sheet(item: $shareItem) { item in
+                PreviewShareSheet(url: item.url)
+            }
         }
     }
 }

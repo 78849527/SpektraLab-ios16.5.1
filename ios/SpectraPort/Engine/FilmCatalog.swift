@@ -48,7 +48,7 @@ enum FilmCatalog {
     static func paperName(_ id: String) -> String { papers.first(where: { $0.id == id })?.name ?? id }
 }
 
-struct FilmSettings {
+struct FilmSettings: Equatable {
     let filmStock: String
     let printStock: String
     let exposureEV: Double
@@ -78,5 +78,25 @@ struct FilmSettings {
             throw PortError.message("无法编码胶片参数")
         }
         return json
+    }
+
+    /// Only send fields that changed. Omitting film_stock and print_stock lets
+    /// spk_set_params retain the measured profile and cached negative for a
+    /// print-only edit, instead of needlessly rebuilding the whole session.
+    func changedDeltaJSON(from previous: FilmSettings) throws -> String {
+        var changes: [String: Any] = [:]
+        if filmStock != previous.filmStock { changes["film_stock"] = filmStock }
+        if printStock != previous.printStock { changes["print_stock"] = printStock }
+        if exposureEV != previous.exposureEV { changes["exposure_compensation_ev"] = exposureEV }
+        if grainAmount != previous.grainAmount { changes["grain_amount"] = grainAmount }
+        if halationAmount != previous.halationAmount { changes["halation_amount"] = halationAmount }
+        if printExposure != previous.printExposure { changes["print_exposure"] = printExposure }
+        if magentaShift != previous.magentaShift { changes["m_filter_shift"] = magentaShift }
+        if yellowShift != previous.yellowShift { changes["y_filter_shift"] = yellowShift }
+        let data = try JSONSerialization.data(withJSONObject: changes, options: [.sortedKeys])
+        guard let result = String(data: data, encoding: .utf8) else {
+            throw PortError.message("无法编码更改的参数")
+        }
+        return result
     }
 }

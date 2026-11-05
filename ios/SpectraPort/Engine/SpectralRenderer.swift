@@ -18,17 +18,33 @@ struct RenderedPhoto {
     let elapsedMS: Double
 }
 
-/// Serial GPU work, with the actual original engine/C ABI. For v0.3, each
-/// Apply action gets its own engine/session, preserving the verified v0.2 path.
-/// Session persistence and live slider debouncing come after device profiling.
+/// The original spectral C ABI owns GPU textures, cached negatives and
+/// source image planes. A single serial queue owns the native handles.
+/// A print-only parameter change calls spk_reprint and reuses the negative;
+/// a shoot-side change invalidates it via spk_set_params.
 final class SpectralRenderer {
     private let queue = DispatchQueue(label: "com.twogou.spectralport.engine", qos: .userInitiated)
     private let context = CIContext(options: [.cacheIntermediates: false])
 
-    func render(data: Data, settings: FilmSettings,
+    private var engine: OpaquePointer?
+    private var session: OpaquePointer?
+    private var cachedPhotoID: UUID?
+    private var cachedOriginal: UIImage?
+    private var appliedSettings: FilmSettings?
+
+    deinit {
+        // Every enqueued render strongly retains this instance until its C
+        // calls finish. Handle teardown runs only after those calls finish.
+        if let session { spk_session_release(session) }
+        if let engine { spk_engine_destroy(engine) }
+    }
+
+    func render(data: Data, photoID: UUID, settings: FilmSettings,
                 completion: @escaping (Result<RenderedPhoto, Error>) -> Void) {
         queue.async {
-            let result = Result { try self.renderSynchronously(data, settings: settings) }
+            let result = Result {
+                try self.renderSynchronously(data, photoID: photoID, settings: settings)
+            }
             DispatchQueue.main.async { completion(result) }
         }
     }
@@ -38,11 +54,36 @@ final class SpectralRenderer {
         return String(cString: text)
     }
 
-    private func renderSynchronously(_ data: Data, settings: FilmSettings) throws -> RenderedPhoto {
+    private func ensureEngine() throws -> OpaquePointer {
+        if let engine { return engine }
+        guard let resources = Bundle.main.resourceURL?.appendingPathComponent("engine"),
+              FileManager.default.fileExists(
+                atPath: resources.appendingPathComponent("spektrafilm_constants.bin").path
+              ) else {
+            throw PortError.message("引擎资源未打包：engine/spektrafilm_constants.bin")
+        }
+        let created = resources.path.withCString { spk_engine_create($0, nil) }
+        guard let created else {
+            throw PortError.message("原版引擎初始化失败：" + errorMessage(nil))
+        }
+        engine = created
+        return created
+    }
+
+    private func openPhoto(_ data: Data, photoID: UUID,
+                           settings: FilmSettings, engine: OpaquePointer) throws {
+        // The previous session's native buffers must be freed before opening
+        // a differently sized photo. Engine kernels/tables survive the switch.
+        if let session { spk_session_release(session) }
+        session = nil
+        cachedPhotoID = nil
+        cachedOriginal = nil
+        appliedSettings = nil
+
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw PortError.message("无法解码图片")
         }
-        // Preserve the verified A15 memory budget: 1440 px interaction tier.
+        // Keep the verified A15 preview memory budget, max edge 1440 px.
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -54,6 +95,7 @@ final class SpectralRenderer {
         guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
             throw PortError.message("系统缺少 ProPhoto RGB 色彩空间")
         }
+
         let width = thumbnail.width
         let height = thumbnail.height
         let input = CIImage(cgImage: thumbnail)
@@ -71,23 +113,11 @@ final class SpectralRenderer {
                 colorSpace: proPhoto
             )
         }
-        let original = UIImage(cgImage: thumbnail)
-
-        guard let resources = Bundle.main.resourceURL?.appendingPathComponent("engine"),
-              FileManager.default.fileExists(atPath: resources.appendingPathComponent("spektrafilm_constants.bin").path) else {
-            throw PortError.message("引擎资源未打包：engine/spektrafilm_constants.bin")
-        }
-        let native: OpaquePointer? = resources.path.withCString { spk_engine_create($0, nil) }
-        guard let engine = native else {
-            throw PortError.message("初始化失败：" + errorMessage(nil))
-        }
-        defer { spk_engine_destroy(engine) }
 
         var openReply: UnsafeMutablePointer<CChar>?
         defer { if let openReply { spk_string_free(openReply) } }
         let delta = try settings.deltaJSON()
-
-        let session: OpaquePointer? = floats.withUnsafeBufferPointer { buffer in
+        let opened: OpaquePointer? = floats.withUnsafeBufferPointer { buffer in
             var frame = spk_image(
                 data: buffer.baseAddress,
                 width: UInt32(width),
@@ -96,27 +126,56 @@ final class SpectralRenderer {
             )
             return delta.withCString { spk_open(engine, &frame, $0, &openReply) }
         }
-        guard let session else {
-            throw PortError.message("打开帧失败：" + errorMessage(engine))
+        guard let opened else {
+            throw PortError.message("打开光谱会话失败：" + errorMessage(engine))
         }
-        defer { spk_session_release(session) }
+        session = opened
+        cachedPhotoID = photoID
+        cachedOriginal = UIImage(cgImage: thumbnail)
+        appliedSettings = settings
+    }
 
+    private func renderSynchronously(_ data: Data, photoID: UUID,
+                                     settings: FilmSettings) throws -> RenderedPhoto {
+        let engine = try ensureEngine()
+        if cachedPhotoID != photoID || session == nil {
+            try openPhoto(data, photoID: photoID, settings: settings, engine: engine)
+        } else if let previous = appliedSettings, previous != settings {
+            // A print-only change reuses the existing film negative.
+            // A film-side change automatically invalidates it upstream.
+            let delta = try settings.changedDeltaJSON(from: previous)
+            var reply: UnsafeMutablePointer<CChar>?
+            defer { if let reply { spk_string_free(reply) } }
+            guard let session else { throw PortError.message("会话已失效") }
+            let code = delta.withCString { spk_set_params(session, $0, &reply) }
+            guard code == SPK_OK else {
+                throw PortError.message("设置参数失败：" + errorMessage(engine))
+            }
+            appliedSettings = settings
+        }
+
+        guard let session else { throw PortError.message("缺少光谱渲染会话") }
         var output = spk_result()
-        let status = "live".withCString { spk_render(session, $0, &output) }
+        // Unlike spk_render, reprint does not throw away a valid cached
+        // negative. If shoot-side params changed, the engine generates one.
+        let status = "live".withCString { spk_reprint(session, $0, &output) }
         guard status == SPK_OK else {
-            throw PortError.message("渲染失败：" + errorMessage(engine))
+            throw PortError.message("原版光谱渲染失败：" + errorMessage(engine))
         }
         defer { spk_result_free(&output) }
 
         guard let raw = output.rgba16, output.width > 0, output.height > 0 else {
             throw PortError.message("引擎没有返回像素")
         }
-        // Original engine output: gamma-encoded ProPhoto RGB / RGBA16.
-        // Copy before the native result's retained Metal texture is released.
+        // Retain the original ProPhoto RGB / RGBA16 management of v0.2.1.
+        // Copy the row-strided pixels before the native texture is released.
         let count = Int(output.row_stride_px) * Int(output.height) * 8
         let copied = Data(bytes: raw, count: count)
         guard let provider = CGDataProvider(data: copied as CFData) else {
-            throw PortError.message("无法创建图像数据提供器")
+            throw PortError.message("无法创建图像提供器")
+        }
+        guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
+            throw PortError.message("系统缺少 ProPhoto RGB 色彩空间")
         }
         let bitmap = CGBitmapInfo.byteOrder16Little.union(
             CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
@@ -134,7 +193,10 @@ final class SpectralRenderer {
             shouldInterpolate: true,
             intent: .defaultIntent
         ) else {
-            throw PortError.message("无法从引擎结果创建 CGImage")
+            throw PortError.message("无法从光谱结果创建图片")
+        }
+        guard let original = cachedOriginal else {
+            throw PortError.message("预览原图缓存丢失")
         }
         return RenderedPhoto(
             original: original,

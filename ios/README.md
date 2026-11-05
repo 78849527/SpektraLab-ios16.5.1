@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.3.0 / Build 4
+## Current iOS build: v0.4.0 / Build 5
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -19,6 +19,11 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - Preserves diagnostic homepage, editor back button and copyable diagnostics;
   adds film, paper, parameters and measured engine render time.
 - Limits interactive preview to 1440px long edge.
+- Original C++/Metal engine and source/negative buffers now persist between Apply actions.
+  The engine receives only changed parameter fields via spk_set_params, and uses
+  spk_reprint to reuse negatives for print-only changes.
+- Preview-only JPEG and PNG share/saving via the iOS share sheet, explicitly
+  converted from original ProPhoto RGB engine output to sRGB.
 - Continuous realtime preview, RAW-specialized decode, full-resolution
   export and full film/paper parity remain future work. Some film/paper
   combinations may have model limitations; report any error using Copy Status.
