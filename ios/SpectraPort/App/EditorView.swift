@@ -37,6 +37,7 @@ final class EditorModel: ObservableObject {
     @Published var yellowShift = 0.0
     @Published var softness = 0.0
     @Published var grade = Adjustments.default
+    @Published var masks: [EditMask] = []
 
     private var sourceData: Data?
     private var photoID = UUID()
@@ -65,6 +66,7 @@ final class EditorModel: ObservableObject {
         yellowShift = settings.yellowShift
         softness = settings.softness
         grade = settings.adjustments
+        masks = settings.masks
         markDirty()
         status = hasPhoto ? "已载入参数，点击「应用设置」渲染" : "预设已载入，选择照片后应用"
     }
@@ -202,7 +204,8 @@ final class EditorModel: ObservableObject {
             halationAmount: halationAmount, printExposure: printExposure,
             magentaShift: magentaShift, yellowShift: yellowShift,
             softness: softness,
-            adjustments: grade
+            adjustments: grade,
+            masks: masks
         )
     }
 
@@ -361,6 +364,12 @@ private enum EditorTab: String, CaseIterable {
     }
 }
 
+private enum GradeSubsection: String, CaseIterable {
+    case basic = "基础调色"
+    case curves = "RGB 曲线"
+    case local = "局部蒙版"
+}
+
 private enum AdjustmentGroup: String, CaseIterable {
     case camera = "拍摄与胶片"
     case print = "暗房冲印"
@@ -420,6 +429,7 @@ struct EditorView: View {
     @State private var exportExpanded = false
     @State private var selectedTab: EditorTab = .adjust
     @State private var adjustmentGroup: AdjustmentGroup = .camera
+    @State private var gradeSubsection: GradeSubsection = .basic
 
     private var filteredFilms: [FilmCatalog.Stock] {
         FilmCatalog.films.filter { filmFilter.accepts($0) }
@@ -518,6 +528,7 @@ struct EditorView: View {
         Yellow shift: \(String(format: "%.2f", model.yellowShift))
         Mac Layer2 global grade: \(model.grade.isNeutral ? "neutral" : "active")
         Mac Layer2 curves: \(model.grade.curves.isIdentity ? "identity" : "custom")
+        Mac Layer2 local masks: \(model.masks.count)
         Mac Layer2 GPU kernel: original macOS Shaders.metal::layer2
         Input digital softness: \(String(format: "%.2f", model.softness))
         Softness stage: Core Image pre-film (independent of original C++ engine)
@@ -1454,13 +1465,23 @@ struct EditorView: View {
                     Spacer()
                     Button("全部复位") {
                         model.grade = .default
+                        model.masks = []
                     }
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DarkroomStyle.accent)
                 }
-                Text("光谱胶片冲印后运行 macOS 原版 Metal Layer 2。预览和高清导出共用相同参数。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(DarkroomStyle.secondary)
+
+                Picker("调色分组", selection: $gradeSubsection) {
+                    ForEach(GradeSubsection.allCases, id: \.self) { item in
+                        Text(item.rawValue).tag(item)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if gradeSubsection == .basic {
+                    Text("原版光谱胶片冲印后运行 macOS 同源 Metal Layer 2，预览与高清导出共用参数。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
 
                 DarkroomControlRow(
                     label: "扫描后曝光", value: $model.grade.exposure,
@@ -1522,7 +1543,11 @@ struct EditorView: View {
                     range: 0...100, step: 1, suffix: "",
                     disabled: model.isBusy
                 )
-                MobileCurveEditor(curves: $model.grade.curves)
+                } else if gradeSubsection == .curves {
+                    MobileCurveEditor(curves: $model.grade.curves)
+                } else {
+                    MobileLocalMaskEditor(masks: $model.masks)
+                }
             }
         }
     }
@@ -1627,6 +1652,7 @@ struct EditorView: View {
             .onChange(of: model.yellowShift) { _ in model.markDirty() }
             .onChange(of: model.softness) { _ in model.markDirty() }
             .onChange(of: model.grade) { _ in model.markDirty() }
+            .onChange(of: model.masks) { _ in model.markDirty() }
             .onAppear {
                 model.onSuccessfulRender = { [weak presetStore] settings in
                     presetStore?.recordUse(settings)
