@@ -127,11 +127,13 @@ against Windows and macOS on the same image. These gates are not complete.
   texture directly into CIImage(mtlTexture:options:) with ROMM colour
   tagging and a Metal-device Core Image context. It avoids the redundant
   8-bytes/pixel GPU-to-CPU readback and CGImage allocation (48MB at 6MP).
-- The first GPU-direct PNG candidate produced transparent black output on
-  the macOS original Metal fixture. That candidate has been rejected.
-  **PNG deliberately keeps the Build20 16-bit CGImage/CPU readback path**
-  until a GPU-direct PNG encoder can prove pixel and alpha correctness.
-  Never claim PNG enjoys the same memory improvement as JPEG.
+- The initial GPU-direct PNG candidate, and its fallback through
+  Core Image's PNG writer, both produced transparent-black output in the
+  macOS Metal fixtures. Both unsafe PNG writer paths have been rejected.
+  PNG now uses the 16-bit CGImage/CPU readback, then Core Graphics performs
+  explicit ROMM→sRGB conversion into an opaque 8-bit bitmap and **ImageIO**
+  writes the PNG. This requires an extra CPU buffer, so PNG does not enjoy
+  the JPEG memory improvement; its pixels and alpha must pass fixture tests.
 - Preview still uses the proven readback path; native C++ optical-film
   simulation and original desktop Metal shader are unchanged.
 - Build21 tests must decode both GPU-JPEG and CPU-safe-PNG, verify
