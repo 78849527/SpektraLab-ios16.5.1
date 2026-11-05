@@ -18,13 +18,14 @@ final class DesktopLayer2Processor {
     private let emptyMaskRaster: MTLTexture
     private let dummyInputLUT: MTLTexture
 
-    init() throws {
+    init(libraryURL: URL? = nil) throws {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else {
             throw PortError.message("桌面一致性调色层需要 Metal GPU")
         }
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent(
-                    "engine/spectraport-desktop-layer2.metallib"),
+        let originalURL = Bundle.main.resourceURL?.appendingPathComponent(
+            "engine/spectraport-desktop-layer2.metallib")
+        guard let url = libraryURL ?? originalURL,
               FileManager.default.fileExists(atPath: url.path) else {
             throw PortError.message("未包含 macOS 原版 Layer 2 shader 资源")
         }
