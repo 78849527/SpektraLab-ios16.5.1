@@ -243,6 +243,18 @@ final class EditorModel: ObservableObject {
         isDirty = false
     }
 
+    func prepareCamera(_ completion: @escaping () -> Void) {
+        guard !isBusy, !isRendering else { return }
+        isBusy = true
+        status = "正在释放暗房 GPU 缓存，准备拍照…"
+        renderer.suspendForCamera { [weak self] in
+            guard let self else { return }
+            self.isBusy = false
+            self.status = "相机已准备就绪"
+            completion()
+        }
+    }
+
     func importCameraCapture(_ capture: CapturedCameraPhoto) {
         guard !isBusy, !isRendering else {
             status = "正在处理上一张照片，请重新拍摄"
@@ -456,6 +468,14 @@ struct EditorView: View {
         }
         inlineFullResolution = nil
         inlineResolutionVersion = -1
+    }
+
+    private func openCamera() {
+        guard !showingCamera else { return }
+        clearInlineHighResolution()
+        model.prepareCamera {
+            showingCamera = true
+        }
     }
 
     private var activeFilmName: String { FilmCatalog.filmName(model.filmID) }
@@ -676,7 +696,7 @@ struct EditorView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    showingCamera = true
+                    openCamera()
                 } label: {
                     Label("拍摄", systemImage: "camera")
                         .font(.system(size: 13, weight: .semibold))
@@ -1459,7 +1479,7 @@ struct EditorView: View {
                 PreviewShareSheet(url: item.url)
             }
             .fullScreenCover(isPresented: $showingCamera) {
-                SpectraCameraView { capture in
+                StableSpectraCameraView { capture in
                     showingCamera = false
                     model.importCameraCapture(capture)
                 }

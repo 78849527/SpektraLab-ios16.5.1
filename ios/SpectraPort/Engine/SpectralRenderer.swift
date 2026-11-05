@@ -72,6 +72,15 @@ final class SpectralRenderer {
         }
     }
 
+    /// Release large native film session caches before opening UIKit camera.
+    /// Runs on the same serial queue as all native C++ and Metal work.
+    func suspendForCamera(completion: @escaping () -> Void) {
+        queue.async {
+            self.resetNativeState()
+            DispatchQueue.main.async { completion() }
+        }
+    }
+
     private func resetNativeState() {
         if let session { spk_session_release(session) }
         session = nil
