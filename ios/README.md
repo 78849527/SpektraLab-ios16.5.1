@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.11.1 / Build 15
+## Current iOS build: v0.12.0 / Build 16
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -121,6 +121,19 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 - Photo preview has an explicit "整张" fit-to-frame button (scale + center)
   and double-tap restore, with no bouncing below minimum zoom. Camera and
   Photos-picker source changes also reset the embedded viewer.
+- v0.12.0 redesigned photo-first iPhone editor: image occupies about 61.5%
+  of the area below the navigation bar, the film/paper/adjustment/preset dock
+  scrolls independently below, and five main entries are fixed at bottom:
+  Library / Capture / Edit / Presets / More. No top selection tabs.
+- Default Capture uses Apple's own UIImagePickerController for stable JPEG
+  capture, custom visible shutter and darkroom-styled overlay. The experimental
+  advanced AVFoundation RAW/ProRAW path is kept behind an explicit option,
+  and it is not claimed to be stable without device testing. Opening camera
+  first releases native spectral GPU textures on the engine's serial queue.
+- Every completed live preview resets the zoom by rebuilding UIScrollView;
+  the in-preview fit button also forces a fresh view. The in-preview + / -
+  actions remain distinct from pinch and double-tap zoom. The 12.5MP on-
+  demand zoom/export and direct PhotoKit save are retained.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
