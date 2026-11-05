@@ -33,6 +33,20 @@ struct InlineZoomPreview: UIViewRepresentable {
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             guard let scroll = scrollView as? DetailImageScrollView else { return }
+            // A late zoom command or an in-flight UIKit animation must not
+            // enlarge the photo underneath photo-space mask handles.
+            if scroll.locksZoomToFit {
+                if !updatingProgrammatically &&
+                   abs(scroll.zoomScale - scroll.minimumZoomScale) >
+                    max(0.00001, scroll.minimumZoomScale * 0.001) {
+                    updatingProgrammatically = true
+                    scroll.resetToFit()
+                    updatingProgrammatically = false
+                } else {
+                    scroll.centerImage()
+                }
+                return
+            }
             scroll.centerImage()
             guard !updatingProgrammatically,
                   scroll.isZooming,
@@ -170,7 +184,9 @@ struct InlineZoomPreview: UIViewRepresentable {
 
         if coordinator.lastZoomCommand != zoomCommand {
             coordinator.lastZoomCommand = zoomCommand
-            if zoomCommand > 0 {
+            // Consume any pending command when entering mask editing:
+            // the command belongs to the regular loupe, not the mask canvas.
+            if zoomCommand > 0 && !maskEditing {
                 let multiplier: CGFloat = zoomDirection > 0 ? 1.6 : (1 / 1.6)
                 let target = min(uiView.maximumZoomScale,
                                  max(uiView.minimumZoomScale, uiView.zoomScale * multiplier))
