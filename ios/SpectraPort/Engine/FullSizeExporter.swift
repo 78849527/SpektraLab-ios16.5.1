@@ -187,4 +187,39 @@ enum FullSizeExporter {
         }
         return url
     }
+    /// Same full-size ProPhoto → sRGB encoder as original native export.
+    /// Called when the desktop Metal Layer 2 pass returns a tagged CGImage.
+    /// Both preview and export therefore use the same graded pixel pipeline.
+    static func write(_ picture: CGImage, format: PreviewExporter.Format) throws -> URL {
+        guard let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+              let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb),
+              let color = picture.colorSpace,
+              color.name == proPhoto.name else {
+            throw PortError.message("Layer 2 高清输出缺少 ProPhoto RGB 色彩标记")
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SpectraPort-layer2-full-" + UUID().uuidString)
+            .appendingPathExtension(format.fileExtension)
+        let context = CIContext(options: [.cacheIntermediates: false])
+        let image = CIImage(cgImage: picture)
+        do {
+            if format == .jpeg {
+                try context.writeJPEGRepresentation(
+                    of: image, to: url, colorSpace: sRGB, options: [:])
+            } else {
+                try context.writePNGRepresentation(
+                    of: image, to: url, format: .RGBA8,
+                    colorSpace: sRGB, options: [:])
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw PortError.message("Layer 2 高清照片编码失败：" + error.localizedDescription)
+        }
+        guard let length = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              length > 0 else {
+            throw PortError.message("Layer 2 输出文件为空")
+        }
+        return url
+    }
+
 }
