@@ -48,3 +48,22 @@ jobs:
           xcrun --sdk iphoneos metallib /tmp/spectraport-original-layer2-ios16.air \
             -o /tmp/spectraport-original-layer2.metallib
           test -s /tmp/spectraport-original-layer2.metallib
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build original spectral engine and bundled Mac Layer2 library
+        run: bash ios/scripts/build-engine.sh
+      - name: Generate iPhone icon and Xcode project
+        run: |
+          swift ios/scripts/generate-dog-icon.swift
+          cd ios && xcodegen generate --spec project.yml
+      - name: Compile iOS 16 device application on parity branch
+        run: |
+          xcodebuild -project ios/SpectraPort.xcodeproj -scheme SpectraPort \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/DerivedData \
+            ENABLE_DEBUG_DYLIB=NO CODE_SIGNING_ALLOWED=NO build
+      - name: Verify the original desktop layer2 kernel is bundled
+        run: |
+          APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
+          test -s "$APP/engine/spectraport-desktop-layer2.metallib"
+          test -f "$APP/SpectraPort"
