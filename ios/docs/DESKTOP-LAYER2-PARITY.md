@@ -137,3 +137,23 @@ against Windows and macOS on the same image. These gates are not complete.
 - Do not publish Build21 as an export improvement: follow real-device
   findings first. Only reintroduce memory optimisation if independent
   reference TIFF/PNG/JPEG tests prove correct pixels, alpha and colour.
+
+## Build 22 (v0.14.2 beta 3): directly manipulate local masks on preview
+
+- Test app has a separate iOS bundle identifier; does not replace Build20.
+- EditMask/MaskComponent (original macOS), the original Layer2 Metal shader,
+  and Build20 JPEG/PNG export code remain unchanged.
+- In 调色 > 局部, preview locks to the native aspect-fit UIImage view.
+  Drag line endpoints to adjust linear gradient endpoints, or drag the
+  line body to move the entire mask. Drag the radial centre or the two
+  axis handles to position and resize the ellipse in original long-edge
+  normalized coordinates. Rotation of pre-existing radial masks is retained.
+- Below the preview, the local panel maintains exposure, tint and feather
+  adjustment and selects the same active mask UUID as the preview overlay.
+- On switching to another tab, pinch/double-tap and buttons revert to the
+  original native zoom UX. During live edits, do not reconstruct or refit
+  the zoom view at each GPU render callback: this preserves drag gestures.
+- A pure Swift geometry CI fixture checks 3:4/landscape letterboxing,
+  normalized coordinate reversibility, long-edge unit radii, rotation and
+  out-of-frame clamp boundaries. Full iPhoneOS 16 compilation also required.
+- This layout change does not claim true live A15 device verification.

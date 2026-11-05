@@ -61,6 +61,19 @@ jobs:
             -o /tmp/spectraport-layer2-model-tests
       - name: Run parity model tests
         run: /tmp/spectraport-layer2-model-tests
+      - name: Test photo-space geometry, exact image fit and rotated mask handles
+        run: |
+          swiftc -swift-version 5 -emit-executable \
+            ios/SpectraPort/Engine/MaskPhotoGeometry.swift \
+            ios/tests/mask-preview/main.swift \
+            -o /tmp/spectraport-mask-preview-geometry
+          /tmp/spectraport-mask-preview-geometry | grep -q MASK_PHOTO_GEOMETRY_PASS
+      - name: Verify only preview UI changed (native export logic remains original)
+        run: |
+          grep -Fq 'InlineMaskOverlay(' ios/SpectraPort/App/EditorView.swift
+          grep -Fq 'maskEditing: editingMaskOnPhoto' ios/SpectraPort/App/EditorView.swift
+          grep -Fq 'uiView.pinchGestureRecognizer?.isEnabled = !maskEditing' ios/SpectraPort/App/InlineZoomPreview.swift
+          grep -Fq 'url = try FullSizeExporter.write(graded, format: format)' ios/SpectraPort/Engine/SpectralRenderer.swift
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
           xcrun --sdk iphoneos metal -miphoneos-version-min=16.0 \
@@ -124,15 +137,15 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortParityBeta21"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "21"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortMaskBeta22"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "22"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortParityBeta21'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '21'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortMaskBeta22'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '22'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱21测试'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱蒙版22'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -147,11 +160,11 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-Layer2-v0.14.1-beta.2-Build21-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-Layer2-v0.14.1-beta.2-Build21-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-MaskEdit-v0.14.2-beta.3-Build22-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-MaskEdit-v0.14.2-beta.3-Build22-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-Layer2-v0.14.1-beta.2-Build21-unsigned
-          path: ios/build/SpectraPort-iOS16-Layer2-v0.14.1-beta.2-Build21-unsigned.ipa
+          name: SpectraPort-MaskEdit-v0.14.2-beta.3-Build22-unsigned
+          path: ios/build/SpectraPort-iOS16-MaskEdit-v0.14.2-beta.3-Build22-unsigned.ipa
           if-no-files-found: error
