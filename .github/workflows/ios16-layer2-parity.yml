@@ -116,28 +116,6 @@ jobs:
             ios/tests/metal/main.swift \
             -framework Metal -framework CoreGraphics \
             -o /tmp/spectraport-layer2-pixel-fixtures
-      - name: Execute macOS Metal fixtures (report unsupported runner explicitly)
-        run: |
-          /tmp/spectraport-layer2-pixel-fixtures \
-            /tmp/spectraport-original-layer2.metallib \
-            /tmp/layer2-original-metal-goldens.json | tee /tmp/layer2-fixture-result.txt
-          if grep -q 'SKIPPED_GPU_RUNTIME' /tmp/layer2-fixture-result.txt; then
-            echo "NOTE: No GPU exposed to CI; only shader compile and Swift model validation passed" >> "$GITHUB_STEP_SUMMARY"
-          else
-            grep -q 'METAL_GPU_FIXTURES_PASS' /tmp/layer2-fixture-result.txt
-            echo "GPU pixel fixtures passed on macOS runner" >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Compare original Mac Metal and Windows Layer2 pixel values
-        run: |
-          if test -s /tmp/layer2-original-metal-goldens.json; then
-            cd desktop
-            npm ci --no-audit --no-fund
-            ./node_modules/.bin/tsx \
-              ../ios/tests/compare-mac-windows.ts \
-              /tmp/layer2-original-metal-goldens.json
-          else
-            echo "WARNING: No Metal GPU on runner; cannot claim Mac/Windows numerical parity" >> "$GITHUB_STEP_SUMMARY"
-          fi
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Build original spectral engine and bundled Mac Layer2 library
@@ -188,3 +166,28 @@ jobs:
           name: SpectraPort-MaskFit-v0.14.3-beta.4-Build23-unsigned
           path: ios/build/SpectraPort-iOS16-MaskFit-v0.14.3-beta.4-Build23-unsigned.ipa
           if-no-files-found: error
+      # Post-package parity checks: preserve a distributable unsigned IPA even
+      # if host-specific Metal numeric fixtures report an Intel GPU mismatch.
+      # A mismatch still FAILS the workflow, and must not be claimed as parity.
+      - name: Execute macOS Metal fixtures (report unsupported runner explicitly)
+        run: |
+          /tmp/spectraport-layer2-pixel-fixtures \
+            /tmp/spectraport-original-layer2.metallib \
+            /tmp/layer2-original-metal-goldens.json | tee /tmp/layer2-fixture-result.txt
+          if grep -q 'SKIPPED_GPU_RUNTIME' /tmp/layer2-fixture-result.txt; then
+            echo "NOTE: No GPU exposed to CI; only shader compile and Swift model validation passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            grep -q 'METAL_GPU_FIXTURES_PASS' /tmp/layer2-fixture-result.txt
+            echo "GPU pixel fixtures passed on macOS runner" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Compare original Mac Metal and Windows Layer2 pixel values
+        run: |
+          if test -s /tmp/layer2-original-metal-goldens.json; then
+            cd desktop
+            npm ci --no-audit --no-fund
+            ./node_modules/.bin/tsx \
+              ../ios/tests/compare-mac-windows.ts \
+              /tmp/layer2-original-metal-goldens.json
+          else
+            echo "WARNING: No Metal GPU on runner; cannot claim Mac/Windows numerical parity" >> "$GITHUB_STEP_SUMMARY"
+          fi
