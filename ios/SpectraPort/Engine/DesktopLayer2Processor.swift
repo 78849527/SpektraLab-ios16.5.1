@@ -7,9 +7,9 @@ import Metal
 ///
 /// This is intentionally separate from the C++ spectral engine and does not
 /// substitute Core Image slider filters for desktop's Layer 2 arithmetic.
-/// Global grading and five-channel curves are supported. The reference
-/// macOS mask feature is disabled in that product; no local masks are
-/// accepted by this first parity-stage adapter.
+/// Global grading, five-channel curves and analytic desktop masks are
+/// supported. The macOS UI currently hides masks, and brush rasters are
+/// intentionally rejected here until a correct raster implementation exists.
 final class DesktopLayer2Processor {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
@@ -36,7 +36,8 @@ final class DesktopLayer2Processor {
 
         // Shader bindings remain valid when maskCount == 0; the actual
         // disabled mask model is never emulated or silently turned on here.
-        guard let maskBuffer = device.makeBuffer(length: 4096, options: .storageModeShared) else {
+        guard let maskBuffer = device.makeBuffer(
+            length: MemoryLayout<MaskUniform>.stride, options: .storageModeShared) else {
             throw PortError.message("分配 Layer 2 蒙版空缓冲失败")
         }
         memset(maskBuffer.contents(), 0, maskBuffer.length)
@@ -83,7 +84,8 @@ final class DesktopLayer2Processor {
         width: Int,
         height: Int,
         rowStridePixels: Int,
-        adjustments: Adjustments
+        adjustments: Adjustments,
+        masks: [EditMask] = []
     ) throws -> CGImage {
         guard width > 0, height > 0, rowStridePixels >= width else {
             throw PortError.message("Layer 2 输入尺寸无效")
@@ -97,9 +99,25 @@ final class DesktopLayer2Processor {
             throw PortError.message("ROMM/ProPhoto 色彩空间不可用")
         }
 
+        // Local masks run through the identical desktop kernel; unsupported
+        // brush rasters must fail explicitly rather than silently appearing
+        // to work without coverage.
+        let activeMasks = masks.filter {
+            $0.enabled && !$0.isEmpty && $0.amount > 0
+        }
+        guard activeMasks.count <= EditMask.maxCount else {
+            throw PortError.message("局部蒙版超出原版最多 8 个的限制")
+        }
+        guard activeMasks.allSatisfy({ $0.components.count <= EditMask.maxComponents }) else {
+            throw PortError.message("单个局部蒙版超出最多 6 个形状的限制")
+        }
+        guard !activeMasks.contains(where: { $0.needsRaster }) else {
+            throw PortError.message("画笔蒙版需要独立笔刷纹理，当前测试版暂未启用")
+        }
+
         // Exactly neutral Layer 2 must preserve every source byte, avoiding
         // even one UNORM sample/quantization round-trip.
-        if !adjustments.enabled || adjustments.isNeutral {
+        if (!adjustments.enabled || adjustments.isNeutral) && activeMasks.isEmpty {
             let copy = Data(bytes: raw, count: length)
             return try makeImage(copy, width: width, height: height,
                                  bytesPerRow: bytesPerRow, colour: romm)
@@ -140,8 +158,23 @@ final class DesktopLayer2Processor {
             throw PortError.message("无法建立 Layer 2 Metal 计算命令")
         }
         var u = adjustments.uniforms
-        var maskCount: UInt32 = 0
+        let packedMasks = activeMasks.map { $0.uniform() }
+        var maskCount = UInt32(packedMasks.count)
         var maskOverlay: Int32 = -1
+        let maskBytes = packedMasks.count * MemoryLayout<MaskUniform>.stride
+        let masksGPU: MTLBuffer?
+        if packedMasks.isEmpty {
+            masksGPU = nil
+        } else {
+            masksGPU = packedMasks.withUnsafeBufferPointer { buffer in
+                guard let ptr = buffer.baseAddress else { return nil }
+                return device.makeBuffer(
+                    bytes: ptr, length: maskBytes, options: .storageModeShared)
+            }
+            guard masksGPU != nil else {
+                throw PortError.message("局部蒙版 GPU 参数缓冲分配失败")
+            }
+        }
         encoder.setComputePipelineState(pipeline)
         encoder.setTexture(src, index: 0)
         encoder.setTexture(dst, index: 1)
@@ -149,7 +182,7 @@ final class DesktopLayer2Processor {
         encoder.setTexture(emptyMaskRaster, index: 3)
         encoder.setTexture(dummyInputLUT, index: 4)
         encoder.setBytes(&u, length: MemoryLayout<Layer2Uniforms>.stride, index: 0)
-        encoder.setBuffer(emptyMaskBuffer, offset: 0, index: 1)
+        encoder.setBuffer(masksGPU ?? emptyMaskBuffer, offset: 0, index: 1)
         encoder.setBytes(&maskCount, length: MemoryLayout<UInt32>.size, index: 2)
         encoder.setBytes(&maskOverlay, length: MemoryLayout<Int32>.size, index: 3)
         let group = MTLSize(width: 8, height: 8, depth: 1)
