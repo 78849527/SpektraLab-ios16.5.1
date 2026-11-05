@@ -1,5 +1,7 @@
 import CoreGraphics
 import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
 import Foundation
 import Metal
 
@@ -143,48 +145,42 @@ final class DesktopLayer2Processor {
               !activeMasks.isEmpty else {
             throw PortError.message("中性调色请使用原版光谱高清导出路径")
         }
-        // CIContext's GPU-to-JPEG writer keeps the original RGB pixels and
-        // produces the expected opaque file without a whole-frame readback.
-        // Its PNG writer currently serializes the same Metal source as a
-        // transparent-black image on the CI macOS runner. Preserve the
-        // pre-Build21 16-bit CGImage PNG path instead of shipping corrupt PNGs.
-        // This intentionally optimizes JPEG first; PNG is still safe but
-        // needs its original 8-bytes-per-pixel CPU staging copy.
-        let image: CIImage
-        if jpeg {
-            let dst = try renderTexture(
-                raw: raw, width: width, height: height,
-                rowStridePixels: rowStridePixels, adjustments: adjustments,
-                activeMasks: activeMasks)
-            guard let sampled = CIImage(
-                mtlTexture: dst, options: [.colorSpace: romm]
-            ) else {
-                throw PortError.message("无法将 Metal JPEG 输出交给 Core Image")
-            }
-            image = sampled.settingAlphaOne(in: sampled.extent)
-        } else {
-            let rendered = try apply(
-                raw: raw, width: width, height: height,
-                rowStridePixels: rowStridePixels, adjustments: adjustments,
-                masks: masks)
-            image = CIImage(cgImage: rendered)
-        }
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SpectraPort-layer2-GPU-" + UUID().uuidString)
+            .appendingPathComponent("SpectraPort-layer2-Export-" + UUID().uuidString)
             .appendingPathExtension(jpeg ? "jpg" : "png")
         do {
             if jpeg {
+                // Original Metal shader → Core Image GPU → JPEG.
+                // No full-size 16-bit CPU readback.
+                let dst = try renderTexture(
+                    raw: raw, width: width, height: height,
+                    rowStridePixels: rowStridePixels, adjustments: adjustments,
+                    activeMasks: activeMasks)
+                guard let sampled = CIImage(
+                    mtlTexture: dst, options: [.colorSpace: romm]
+                ) else {
+                    throw PortError.message("无法将 Metal JPEG 输出交给 Core Image")
+                }
                 try exportContext.writeJPEGRepresentation(
-                    of: image, to: url, colorSpace: srgb, options: [:])
+                    of: sampled.settingAlphaOne(in: sampled.extent),
+                    to: url, colorSpace: srgb, options: [:])
             } else {
-                try exportContext.writePNGRepresentation(
-                    of: image, to: url, format: .RGBA8,
-                    colorSpace: srgb, options: [:])
+                // On the current Mac GPU test runner, both PNG writes through
+                // Core Image produced alpha=0 (transparent black), even after
+                // enforcing opaque alpha. Keep 16-bit shader readback, then
+                // let Core Graphics convert the *original* tagged ProPhoto
+                // CGImage into an explicit, opaque 8-bit sRGB bitmap.
+                // ImageIO writes the PNG. No failing Core Image PNG writer.
+                let rendered = try apply(
+                    raw: raw, width: width, height: height,
+                    rowStridePixels: rowStridePixels,
+                    adjustments: adjustments, masks: masks)
+                try writeOpaqueSRGBPNG(rendered, to: url, colorSpace: srgb)
             }
         } catch {
             try? FileManager.default.removeItem(at: url)
             throw PortError.message(
-                "Metal 直连高清导出失败：" + error.localizedDescription)
+                "高清编码失败：" + error.localizedDescription)
         }
         guard let bytes = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               bytes > 0 else {
@@ -192,6 +188,40 @@ final class DesktopLayer2Processor {
             throw PortError.message("Metal 直连高清导出的文件为空")
         }
         return url
+    }
+
+    /// Explicit 8-bit sRGB Quartz bitmap + ImageIO PNG writer. The source
+    /// shader always outputs alpha=1; preserve that known-opaque contract.
+    /// Drawing through Core Graphics also performs the profile conversion.
+    private func writeOpaqueSRGBPNG(
+        _ source: CGImage, to url: URL, colorSpace: CGColorSpace
+    ) throws {
+        let w = source.width, h = source.height
+        guard w > 0, h > 0, w <= Int.max / 4 else {
+            throw PortError.message("PNG 图像宽高异常")
+        }
+        let bitmap = CGBitmapInfo.byteOrder32Big.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: colorSpace, bitmapInfo: bitmap.rawValue
+        ) else {
+            throw PortError.message("无法分配 sRGB PNG 画布")
+        }
+        ctx.interpolationQuality = .none
+        ctx.setFillColor(CGColor(gray: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.draw(source, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let converted = ctx.makeImage(),
+              let writer = CGImageDestinationCreateWithURL(
+                url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw PortError.message("PNG 色彩转换或文件创建失败")
+        }
+        CGImageDestinationAddImage(writer, converted, nil)
+        guard CGImageDestinationFinalize(writer) else {
+            throw PortError.message("ImageIO 未能写出有效 PNG 文件")
+        }
     }
 
     private func validatedRowBytes(
