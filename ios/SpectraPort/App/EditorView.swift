@@ -445,6 +445,20 @@ struct EditorView: View {
         model.hasPhoto && (!model.realtimeEnabled || model.isDirty)
     }
 
+    /// macOS desktop uses +EV for a brighter print; the engine's enlarger
+    /// wire field is inverse exposure: print_exposure = 2^(-EV).
+    /// Leave persisted wire values intact so pre-v0.14 presets still decode.
+    private var printBrightnessStops: Binding<Double> {
+        Binding(
+            get: {
+                -log2(max(0.05, min(20, model.printExposure)))
+            },
+            set: { stops in
+                model.printExposure = pow(2, -stops)
+            }
+        )
+    }
+
     private var canExport: Bool {
         !model.isBusy && !model.isRendering && !model.isDirty &&
         !savingToPhotos && model.processed != nil
@@ -525,6 +539,7 @@ struct EditorView: View {
         Grain amount: \(String(format: "%.2f", model.grainAmount))
         Halation amount: \(String(format: "%.2f", model.halationAmount))
         Print exposure: \(String(format: "%.2f", model.printExposure))
+        Print brightness EV (Mac): \(String(format: "%+.2f", -log2(max(0.05, model.printExposure))))
         Magenta shift: \(String(format: "%.2f", model.magentaShift))
         Yellow shift: \(String(format: "%.2f", model.yellowShift))
         Mac Layer2 global grade: \(model.grade.isNeutral ? "neutral" : "active")
@@ -1054,8 +1069,8 @@ struct EditorView: View {
                 DisclosureGroup(isExpanded: $darkroomExpanded) {
                     VStack(spacing: 18) {
                         DarkroomControlRow(
-                            label: "相纸曝光", value: $model.printExposure,
-                            range: 0.2...3, step: 0.05, suffix: "×",
+                            label: "冲印亮度", value: printBrightnessStops,
+                            range: -3...3, step: 0.1, suffix: " EV",
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
@@ -1425,8 +1440,8 @@ struct EditorView: View {
                             .foregroundStyle(DarkroomStyle.secondary)
                     } else {
                         DarkroomControlRow(
-                            label: "相纸曝光", value: $model.printExposure,
-                            range: 0.2...3, step: 0.05, suffix: "×",
+                            label: "冲印亮度", value: printBrightnessStops,
+                            range: -3...3, step: 0.1, suffix: " EV",
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
