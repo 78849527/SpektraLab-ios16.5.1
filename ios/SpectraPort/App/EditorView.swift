@@ -32,6 +32,40 @@ final class EditorModel: ObservableObject {
 
     var hasPhoto: Bool { sourceData != nil }
     private let renderer = SpectralRenderer()
+    var onSuccessfulRender: ((FilmSettings) -> Void)?
+
+    var currentSettings: FilmSettings { snapshot() }
+
+    func loadLook(_ settings: FilmSettings) {
+        guard !isBusy else { return }
+        // Restore both stocks exactly; preserve the saved paper choice.
+        filmID = settings.filmStock
+        paperID = settings.printStock
+        exposureEV = settings.exposureEV
+        grainAmount = settings.grainAmount
+        halationAmount = settings.halationAmount
+        printExposure = settings.printExposure
+        magentaShift = settings.magentaShift
+        yellowShift = settings.yellowShift
+        markDirty()
+        status = hasPhoto ? "已载入参数，点击「应用设置」渲染" : "预设已载入，选择照片后应用"
+    }
+
+    func restoreDefaults() {
+        loadLook(FilmSettings(
+            filmStock: "kodak_portra_400",
+            printStock: "kodak_portra_endura",
+            exposureEV: 0, grainAmount: 1, halationAmount: 1,
+            printExposure: 1, magentaShift: 0, yellowShift: 0
+        ))
+    }
+
+    func selectPair(film: String, paper: String) {
+        guard !isBusy else { return }
+        filmID = film
+        paperID = paper
+        markDirty()
+    }
 
     func markDirty() {
         guard sourceData != nil else { return }
@@ -40,6 +74,8 @@ final class EditorModel: ObservableObject {
     }
 
     func selectFilm(_ id: String) {
+        guard id != filmID else { return }
+        filmID = id
         // Respect each measured negative's preferred paper when present.
         if let target = FilmCatalog.films.first(where: { $0.id == id })?.targetPrint,
            FilmCatalog.papers.contains(where: { $0.id == target }) {
@@ -134,6 +170,7 @@ final class EditorModel: ObservableObject {
                 self.processed = photo.processed
                 self.lastElapsedMS = photo.elapsedMS
                 self.status = "\(FilmCatalog.filmName(settings.filmStock)) · \(FilmCatalog.paperName(settings.printStock)) · 已渲染"
+                self.onSuccessfulRender?(settings)
             case let .failure(error):
                 self.lastElapsedMS = nil
                 self.isDirty = true
@@ -147,9 +184,14 @@ struct EditorView: View {
     let onBack: () -> Void
 
     @StateObject private var model = EditorModel()
+    @StateObject private var presetStore = PresetStore()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showSavePreset = false
+    @State private var newPresetName = ""
     @State private var copiedStatus = false
     @State private var shareItem: ShareItem?
+    @State private var mostRecentExport: ShareItem?
+    @State private var mostRecentExportLabel = ""
 
     private func copyStatus() {
         let metalName = MTLCreateSystemDefaultDevice()?.name ?? "Metal unavailable"
@@ -182,6 +224,8 @@ struct EditorView: View {
         Pending edits: \(model.isDirty)
         High-res limit: \(model.exportLimit.rawValue)
         Last high-res export: \(model.lastExportInfo)
+        Saved presets: \(presetStore.presets.count)
+        Recent combinations: \(presetStore.recentPairs.count)
         Bundle identifier: \(Bundle.main.bundleIdentifier ?? "unknown")
         """
         UIPasteboard.general.string = report
@@ -194,7 +238,13 @@ struct EditorView: View {
             return
         }
         do {
-            shareItem = ShareItem(url: try PreviewExporter.write(image, format: format))
+            let saved = ShareItem(url: try PreviewExporter.write(image, format: format))
+            mostRecentExport = saved
+            let attributes = try FileManager.default.attributesOfItem(atPath: saved.url.path)
+            let bytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+            let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+            mostRecentExportLabel = "\(format == .jpeg ? "JPEG" : "PNG") · \(Int(image.size.width)) × \(Int(image.size.height)) · \(size) · 预览"
+            shareItem = saved
         } catch {
             model.status = "导出预览失败：\(error.localizedDescription)"
         }
@@ -203,7 +253,10 @@ struct EditorView: View {
     private func exportOriginal(_ format: PreviewExporter.Format) {
         model.exportOriginal(format: format) { result in
             if case let .success(output) = result {
-                shareItem = ShareItem(url: output.url)
+                let saved = ShareItem(url: output.url)
+                mostRecentExport = saved
+                mostRecentExportLabel = output.summary
+                shareItem = saved
             }
         }
     }
@@ -276,6 +329,28 @@ struct EditorView: View {
                     }
                     .disabled(model.isBusy || model.isDirty || model.processed == nil)
 
+                    if let last = mostRecentExport {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("最近导出文件").font(.subheadline.weight(.semibold))
+                            Text(mostRecentExportLabel)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button {
+                                if FileManager.default.fileExists(atPath: last.url.path) {
+                                    shareItem = ShareItem(url: last.url)
+                                } else {
+                                    model.status = "最近导出文件已被系统清理，请重新导出"
+                                    mostRecentExport = nil
+                                }
+                            } label: {
+                                Label("再次分享／保存", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(model.isBusy)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text("高清导出").font(.headline)
                         Picker("分辨率与内存保护", selection: $model.exportLimit) {
@@ -309,9 +384,73 @@ struct EditorView: View {
                             .font(.footnote).foregroundStyle(.red)
                     }
 
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("自定义胶片预设").font(.headline)
+                        HStack(spacing: 10) {
+                            Button {
+                                newPresetName = "\(FilmCatalog.filmName(model.filmID)) · 自定义"
+                                showSavePreset = true
+                            } label: {
+                                Label("保存当前参数", systemImage: "bookmark")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.isBusy || model.filmID.isEmpty || model.paperID.isEmpty)
+
+                            Menu {
+                                if presetStore.presets.isEmpty {
+                                    Text("暂无保存的预设")
+                                } else {
+                                    ForEach(presetStore.presets) { preset in
+                                        Button(preset.name) { model.loadLook(preset.settings) }
+                                    }
+                                }
+                            } label: {
+                                Label("载入预设", systemImage: "square.stack")
+                            }
+                            .disabled(model.isBusy || presetStore.presets.isEmpty)
+                        }
+                        HStack {
+                            Button("恢复默认参数") { model.restoreDefaults() }
+                                .disabled(model.isBusy)
+                            Spacer()
+                            if !presetStore.presets.isEmpty {
+                                Menu {
+                                    ForEach(presetStore.presets) { preset in
+                                        Button(role: .destructive) {
+                                            presetStore.remove(id: preset.id)
+                                        } label: {
+                                            Text("删除「\(preset.name)」")
+                                        }
+                                    }
+                                } label: {
+                                    Label("删除预设", systemImage: "trash")
+                                }
+                                .disabled(model.isBusy)
+                            }
+                        }
+                        if !presetStore.recentPairs.isEmpty {
+                            Menu {
+                                ForEach(presetStore.recentPairs) { item in
+                                    Button("\(FilmCatalog.filmName(item.filmID)) / \(FilmCatalog.paperName(item.paperID))") {
+                                        model.selectPair(film: item.filmID, paper: item.paperID)
+                                    }
+                                }
+                            } label: {
+                                Label("最近使用的胶片／相纸组合", systemImage: "clock.arrow.circlepath")
+                            }
+                            .disabled(model.isBusy)
+                        }
+                        Text("预设及最近组合只保存在本机。载入后点击「应用设置」，不会修改原版引擎。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                     VStack(alignment: .leading, spacing: 12) {
                         Text("原版胶片与相纸").font(.headline)
-                        Picker("胶片", selection: $model.filmID) {
+                        Picker("胶片", selection: Binding(
+                            get: { model.filmID },
+                            set: { model.selectFilm($0) }
+                        )) {
                             ForEach(FilmCatalog.films) { stock in
                                 Text(stock.name).tag(stock.id)
                             }
@@ -361,7 +500,6 @@ struct EditorView: View {
                 }
             }
             .onChange(of: selectedPhoto) { newValue in model.importPhoto(newValue) }
-            .onChange(of: model.filmID) { model.selectFilm($0) }
             .onChange(of: model.paperID) { _ in model.markDirty() }
             .onChange(of: model.exposureEV) { _ in model.markDirty() }
             .onChange(of: model.grainAmount) { _ in model.markDirty() }
@@ -369,6 +507,24 @@ struct EditorView: View {
             .onChange(of: model.printExposure) { _ in model.markDirty() }
             .onChange(of: model.magentaShift) { _ in model.markDirty() }
             .onChange(of: model.yellowShift) { _ in model.markDirty() }
+            .onAppear {
+                model.onSuccessfulRender = { [weak presetStore] settings in
+                    presetStore?.recordUse(settings)
+                }
+            }
+            .alert("保存自定义预设", isPresented: $showSavePreset) {
+                TextField("预设名称", text: $newPresetName)
+                Button("保存") {
+                    if presetStore.save(name: newPresetName, settings: model.currentSettings) {
+                        model.status = "已在本机保存预设「\(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines))」"
+                    } else {
+                        model.status = "预设名称不能为空，且胶片参数必须有效"
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("同名预设会被更新。最多保留 30 组，保存在此设备上。")
+            }
             .sheet(item: $shareItem) { item in
                 PreviewShareSheet(url: item.url)
             }
