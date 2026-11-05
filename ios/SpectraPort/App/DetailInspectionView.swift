@@ -8,7 +8,7 @@ struct DetailInspection: Identifiable {
     let result: HighResExportResult
 }
 
-private final class DetailImageScrollView: UIScrollView {
+final class DetailImageScrollView: UIScrollView {
     let picture = UIImageView()
     private var intrinsicPixels: CGSize = .zero
     private var needsFit = true
