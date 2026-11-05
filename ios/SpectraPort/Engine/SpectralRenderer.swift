@@ -16,6 +16,7 @@ struct RenderedPhoto {
     let original: UIImage
     let processed: UIImage
     let elapsedMS: Double
+    let parametersVerified: Bool
 }
 
 /// The original spectral C ABI owns GPU textures, cached negatives and
@@ -222,6 +223,47 @@ final class SpectralRenderer {
         appliedSettings = settings
     }
 
+    /// Read back original C++ model settings instead of assuming the
+    /// passed JSON is accepted solely because an image was produced.
+    private func verifyResolvedParameters(
+        _ session: OpaquePointer, settings: FilmSettings
+    ) throws {
+        var reply: UnsafeMutablePointer<CChar>?
+        let code = spk_get_params(session, &reply)
+        defer { if let reply { spk_string_free(reply) } }
+        guard code == SPK_OK, let reply,
+              let data = String(cString: reply).data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data),
+              let resolved = parsed as? [String: Any] else {
+            throw PortError.message("引擎参数读回失败")
+        }
+
+        let stockValues = [
+            "film_stock": settings.filmStock,
+            "print_stock": settings.printStock
+        ]
+        for (key, expected) in stockValues {
+            guard let actual = resolved[key] as? String, actual == expected else {
+                throw PortError.message("引擎没有应用：" + key)
+            }
+        }
+        let numeric: [String: Double] = [
+            "exposure_compensation_ev": settings.exposureEV,
+            "grain_amount": settings.grainAmount,
+            "halation_amount": settings.halationAmount,
+            "print_exposure": settings.printExposure,
+            "m_filter_shift": settings.magentaShift,
+            "y_filter_shift": settings.yellowShift,
+            "filter_shift_scale": 40.0
+        ]
+        for (key, expected) in numeric {
+            guard let actual = (resolved[key] as? NSNumber)?.doubleValue,
+                  abs(actual - expected) < 0.001 else {
+                throw PortError.message("引擎读回参数与滑块不符：" + key)
+            }
+        }
+    }
+
     private func renderSynchronously(_ data: Data, photoID: UUID,
                                      settings: FilmSettings) throws -> RenderedPhoto {
         let engine = try ensureEngine()
@@ -242,6 +284,7 @@ final class SpectralRenderer {
         }
 
         guard let session else { throw PortError.message("缺少光谱渲染会话") }
+        try verifyResolvedParameters(session, settings: settings)
         var output = spk_result()
         // Unlike spk_render, reprint does not throw away a valid cached
         // negative. If shoot-side params changed, the engine generates one.
@@ -288,7 +331,8 @@ final class SpectralRenderer {
         return RenderedPhoto(
             original: original,
             processed: UIImage(cgImage: rendered),
-            elapsedMS: output.elapsed_ms
+            elapsedMS: output.elapsed_ms,
+            parametersVerified: true
         )
     }
 }
