@@ -407,6 +407,7 @@ struct EditorView: View {
     @State private var showingStartupSettings = false
     @State private var showingCamera = false
     @State private var zoomResetToken = 0
+    @State private var showingQuickHelp = false
     @State private var zoomCommand = 0
     @State private var zoomDirection = 0
     @State private var pendingCapture: CapturedCameraPhoto?
@@ -1073,21 +1074,15 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
-                            label: "降低数码锐利感", value: $model.softness,
+                            label: "数码柔化", value: $model.softness,
                             range: 0...1, step: 0.05, suffix: "",
                             disabled: model.isBusy
                         )
-                        Text("0 = 保留拍摄原始锐利度；1 = 适度减弱数码边缘反差。不能还原 JPEG 已丢失的细节，胶片颗粒在此之后生成。")
-                            .font(.system(size: 10))
-                            .foregroundStyle(DarkroomStyle.secondary)
                         DarkroomControlRow(
-                            label: "反射光晕面积", value: $model.halationAmount,
+                            label: "光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
                             disabled: model.isBusy
                         )
-                        Text("0 = 完全关闭光晕处理；1 = 胶片默认反射面积。普通画面效果较弱，夜间点光源边缘更明显。")
-                            .font(.system(size: 10))
-                            .foregroundStyle(DarkroomStyle.secondary)
                     }
                     .padding(.top, 16)
                 } label: {
@@ -1104,12 +1099,12 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
-                            label: "放大机 M 滤色", value: $model.magentaShift,
+                            label: "M 滤色", value: $model.magentaShift,
                             range: -0.5...0.5, step: 0.05, suffix: "",
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
-                            label: "放大机 Y 滤色", value: $model.yellowShift,
+                            label: "Y 滤色", value: $model.yellowShift,
                             range: -0.5...0.5, step: 0.05, suffix: "",
                             disabled: model.isBusy
                         )
@@ -1331,7 +1326,7 @@ struct EditorView: View {
                         selectedTab = tab
                     }
                 } label: {
-                    VStack(spacing: 5) {
+                    VStack(spacing: 3) {
                         Image(systemName: tab.symbol)
                             .font(.system(size: 16, weight: .medium))
                         Text(tab.rawValue)
@@ -1339,7 +1334,7 @@ struct EditorView: View {
                     }
                     .foregroundStyle(selectedTab == tab
                                      ? DarkroomStyle.background : DarkroomStyle.primary)
-                    .frame(maxWidth: .infinity, minHeight: 49)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .background(
                         selectedTab == tab ? DarkroomStyle.accent : Color.clear,
                         in: RoundedRectangle(cornerRadius: 12)
@@ -1349,9 +1344,9 @@ struct EditorView: View {
             }
         }
         .padding(5)
-        .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 15))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     private var bottomNavigation: some View {
@@ -1415,10 +1410,10 @@ struct EditorView: View {
 
     private var quickAdjustmentPanel: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Text("实时光谱调节")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(DarkroomStyle.primary)
                     Spacer()
                     Toggle(
@@ -1440,7 +1435,7 @@ struct EditorView: View {
                 }
                 .pickerStyle(.segmented)
 
-                VStack(spacing: 8) {
+                VStack(spacing: 3) {
                     if adjustmentGroup == .camera {
                         DarkroomControlRow(
                             label: "曝光补偿", value: $model.exposureEV,
@@ -1486,6 +1481,20 @@ struct EditorView: View {
                         )
                     }
                 }
+                DisclosureGroup(isExpanded: $showingQuickHelp) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("数码柔化：0 为原始锐度；1 为减弱边缘反差，不恢复 JPEG 丢失细节。")
+                        Text("光晕面积：0 关闭；1 为胶片默认，夜间点光源更明显。")
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
+                } label: {
+                    Label("参数说明", systemImage: "info.circle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
+                .tint(DarkroomStyle.secondary)
+
                 if model.realtimeEnabled {
                     Text("移动滑块后约 0.24 秒合并更新，复用原版负片缓存。")
                         .font(.system(size: 10))
@@ -1503,10 +1512,10 @@ struct EditorView: View {
     /// are post-print controls, not substitutes for film exposure/grain.
     private var desktopGradePanel: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 7) {
                 HStack {
-                    Text("桌面同源 · 扫描后调色")
-                        .font(.system(size: 15, weight: .semibold))
+                    Text("桌面同源 · 调色")
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(DarkroomStyle.primary)
                     Spacer()
                     Button("全部复位") {
@@ -1525,10 +1534,6 @@ struct EditorView: View {
                 .pickerStyle(.segmented)
 
                 if gradeSubsection == .basic {
-                    Text("原版光谱胶片冲印后运行 macOS 同源 Metal Layer 2，预览与高清导出共用参数。")
-                        .font(.system(size: 10))
-                        .foregroundStyle(DarkroomStyle.secondary)
-
                 DarkroomControlRow(
                     label: "扫描后曝光", value: $model.grade.exposure,
                     range: -3...3, step: 0.1, suffix: " EV",
@@ -1585,7 +1590,7 @@ struct EditorView: View {
                     disabled: model.isBusy
                 )
                 DarkroomControlRow(
-                    label: "暗角中心范围", value: $model.grade.vignette.midpoint,
+                    label: "暗角范围", value: $model.grade.vignette.midpoint,
                     range: 0...100, step: 1, suffix: "",
                     disabled: model.isBusy
                 )

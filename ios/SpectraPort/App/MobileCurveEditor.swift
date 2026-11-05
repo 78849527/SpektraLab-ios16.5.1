@@ -25,10 +25,10 @@ struct MobileCurveEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text("RGB / 亮度曲线")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DarkroomStyle.primary)
                 Spacer()
                 Button("复位当前通道") {
@@ -58,7 +58,7 @@ struct MobileCurveEditor: View {
             }
 
             GeometryReader { geo in
-                let side = min(geo.size.width, 290.0)
+                let side = min(geo.size.width, 252.0)
                 let square = CGSize(width: side, height: side)
                 Canvas { context, size in
                     let w = size.width, h = size.height
@@ -134,7 +134,7 @@ struct MobileCurveEditor: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(height: min(290, UIScreen.main.bounds.width - 55))
+            .frame(height: min(252, UIScreen.main.bounds.width - 55))
 
             Text("点按添加控制点，拖动修改曲线；端点不能删除。使用「复位当前通道」恢复直线。")
                 .font(.system(size: 10))

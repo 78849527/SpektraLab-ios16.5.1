@@ -49,10 +49,10 @@ struct MobileColorBalanceEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text("分区色彩平衡")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DarkroomStyle.primary)
                 Spacer()
                 Button("复位当前分区") {
@@ -71,7 +71,7 @@ struct MobileColorBalanceEditor: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(option == region ?
                                 DarkroomStyle.background : DarkroomStyle.primary)
-                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .frame(maxWidth: .infinity, minHeight: 34)
                             .background(option == region ?
                                 DarkroomStyle.accent : DarkroomStyle.raised,
                                 in: RoundedRectangle(cornerRadius: 8))
@@ -83,7 +83,7 @@ struct MobileColorBalanceEditor: View {
             HStack {
                 Spacer()
                 ColorZoneWheel(zone: zone)
-                    .frame(width: 188, height: 188)
+                    .frame(width: 164, height: 164)
                 Spacer()
             }
             DarkroomControlRow(

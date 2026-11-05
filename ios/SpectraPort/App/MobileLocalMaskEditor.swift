@@ -5,6 +5,14 @@ import SwiftUI
 /// preview and full-resolution Metal passes. Brush is intentionally absent
 /// until its per-mask raster is implemented and tested.
 struct MobileLocalMaskEditor: View {
+    private enum CompactSection: String, CaseIterable, Identifiable {
+        case selection = "选区"
+        case light = "光线"
+        case color = "色彩"
+        var id: String { rawValue }
+    }
+    @State private var section: CompactSection = .selection
+
     @Binding var masks: [EditMask]
     /// One selection shared with the handles shown over the photo preview.
     @Binding var selectedID: UUID?
@@ -29,6 +37,7 @@ struct MobileLocalMaskEditor: View {
         let m = EditMask.make(kind, named: name + " " + String(masks.count + 1))
         masks.append(m)
         selectedID = m.id
+        section = .selection
     }
 
     private func resetSelected(_ i: Int) {
@@ -45,18 +54,17 @@ struct MobileLocalMaskEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text("局部调整 · macOS 同源")
-                    .font(.system(size: 14, weight: .semibold))
+                Text("局部蒙版")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DarkroomStyle.primary)
                 Spacer()
-                Text("\(masks.count)/\(EditMask.maxCount)")
-                    .font(.system(size: 11, design: .monospaced))
+                Text(String(masks.count) + "/" + String(EditMask.maxCount))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(DarkroomStyle.secondary)
             }
-
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 Button { add(.linearGradient) } label: {
                     Label("线性", systemImage: "square.righthalf.filled")
                 }
@@ -70,67 +78,69 @@ struct MobileLocalMaskEditor: View {
                     Label("颜色", systemImage: "eyedropper")
                 }
             }
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: 10, weight: .medium))
             .buttonStyle(.bordered)
             .tint(DarkroomStyle.accent)
             .disabled(masks.count >= EditMask.maxCount)
 
             if masks.isEmpty {
-                Text("添加渐变或亮度范围后，即可独立修改局部曝光、色温、饱和度等。")
-                    .font(.system(size: 12))
+                Text("添加选区后，可直接在照片上移动控制点，再调节局部光线和色彩。")
+                    .font(.system(size: 11))
                     .foregroundStyle(DarkroomStyle.secondary)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 5) {
                         ForEach(masks) { mask in
+                            let isSelected = selectedID == mask.id ||
+                                (selectedID == nil && masks.first?.id == mask.id)
                             Button(mask.name) {
                                 selectedID = mask.id
+                                section = .selection
                             }
-                            .font(.system(size: 11))
-                            .foregroundStyle(selectedID == mask.id ||
-                                (selectedID == nil && masks.first?.id == mask.id)
-                                ? DarkroomStyle.background : DarkroomStyle.primary)
-                            .padding(.horizontal, 11)
-                            .frame(height: 34)
-                            .background(
-                                (selectedID == mask.id ||
-                                 (selectedID == nil && masks.first?.id == mask.id))
-                                 ? DarkroomStyle.accent : DarkroomStyle.raised,
-                                in: Capsule())
+                            .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ?
+                                DarkroomStyle.background : DarkroomStyle.primary)
+                            .padding(.horizontal, 10)
+                            .frame(height: 30)
+                            .background(isSelected ? DarkroomStyle.accent : DarkroomStyle.raised,
+                                        in: Capsule())
                         }
                     }
                 }
 
                 if let i = selectedIndex, masks.indices.contains(i),
                    let kind = masks[i].components.first?.kind {
-                    HStack {
-                        Text(masks[i].name)
-                            .font(.system(size: 13, weight: .semibold))
-                        Spacer()
-                        Toggle("启用", isOn: $masks[i].enabled)
-                            .font(.system(size: 11))
-                            .tint(DarkroomStyle.accent)
-                            .fixedSize()
+                    Picker("局部调整分组", selection: $section) {
+                        ForEach(CompactSection.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
                     }
-                    .foregroundStyle(DarkroomStyle.primary)
+                    .pickerStyle(.segmented)
 
-                    DarkroomControlRow(
-                        label: "局部强度", value: $masks[i].amount,
-                        range: 0...1, step: 0.05, suffix: "",
-                        disabled: false
-                    )
-                    Toggle("反转区域", isOn: $masks[i].inverted)
-                        .font(.system(size: 12))
-                        .foregroundStyle(DarkroomStyle.primary)
+                    if section == .selection {
+                        HStack {
+                            Toggle("启用", isOn: $masks[i].enabled)
+                                .font(.system(size: 11))
+                            Spacer(minLength: 6)
+                            Toggle("反转", isOn: $masks[i].inverted)
+                                .font(.system(size: 11))
+                        }
                         .tint(DarkroomStyle.accent)
+                        .foregroundStyle(DarkroomStyle.primary)
 
-                    if kind == .linearGradient || kind == .radialGradient {
-                        Text(kind == .linearGradient
-                            ? "在上方照片拖动黄色连线可移动整个渐变；拖动两端圆点可调整方向和范围。"
-                            : "在上方照片拖动中心圆点定位椭圆，拖动两侧圆点改变宽度与高度。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(DarkroomStyle.secondary)
-                        if kind == .radialGradient {
+                        DarkroomControlRow(
+                            label: "蒙版强度", value: $masks[i].amount,
+                            range: 0...1, step: 0.05, suffix: "", disabled: false
+                        )
+
+                        if kind == .linearGradient {
+                            Text("照片上拖动黄色连线移动选区；拖动两端圆点改变范围。")
+                                .font(.system(size: 10))
+                                .foregroundStyle(DarkroomStyle.secondary)
+                        } else if kind == .radialGradient {
+                            Text("照片上拖动中心定位，拖动边缘圆点调整椭圆。")
+                                .font(.system(size: 10))
+                                .foregroundStyle(DarkroomStyle.secondary)
                             DarkroomControlRow(
                                 label: "横向范围", value: Binding(
                                     get: { Double(masks[i].components[0].radii.width) },
@@ -144,77 +154,69 @@ struct MobileLocalMaskEditor: View {
                                 range: 0.03...0.7, step: 0.01, suffix: "", disabled: false
                             )
                             DarkroomControlRow(
-                                label: "过渡柔和度", value: $masks[i].components[0].feather,
+                                label: "过渡柔和", value: $masks[i].components[0].feather,
                                 range: 0...1, step: 0.05, suffix: "", disabled: false
                             )
+                        } else if kind == .luminanceRange {
+                            Label("在照片上点击取样亮度；黄色十字标记取样点。", systemImage: "scope")
+                                .font(.system(size: 10))
+                                .foregroundStyle(DarkroomStyle.accent)
+                            DarkroomControlRow(
+                                label: "亮度下限", value: $masks[i].components[0].low,
+                                range: 0...1, step: 0.02, suffix: "", disabled: false
+                            )
+                            DarkroomControlRow(
+                                label: "亮度上限", value: $masks[i].components[0].high,
+                                range: 0...1, step: 0.02, suffix: "", disabled: false
+                            )
+                            DarkroomControlRow(
+                                label: "亮度过渡", value: $masks[i].components[0].softness,
+                                range: 0...0.5, step: 0.02, suffix: "", disabled: false
+                            )
+                        } else if kind == .colorRange {
+                            MaskColourRangePicker(component: $masks[i].components[0])
                         }
-                    } else if kind == .luminanceRange {
-                        Label("点击或拖动上方照片取样亮度。黄色十字标记取样位置，然后调整亮度上下限和局部曝光。", systemImage: "scope")
-                            .font(.system(size: 11))
-                            .foregroundStyle(DarkroomStyle.accent)
-                            .fixedSize(horizontal: false, vertical: true)
-                        DarkroomControlRow(
-                            label: "亮度下限", value: $masks[i].components[0].low,
-                            range: 0...1, step: 0.02, suffix: "", disabled: false
-                        )
-                        DarkroomControlRow(
-                            label: "亮度上限", value: $masks[i].components[0].high,
-                            range: 0...1, step: 0.02, suffix: "", disabled: false
-                        )
-                        DarkroomControlRow(
-                            label: "亮度过渡", value: $masks[i].components[0].softness,
-                            range: 0...0.5, step: 0.02, suffix: "", disabled: false
-                        )
-                    } else if kind == .colorRange {
-                        MaskColourRangePicker(component: $masks[i].components[0])
+
+                        HStack(spacing: 12) {
+                            Button("复位蒙版") { resetSelected(i) }
+                            Spacer()
+                            Button("删除蒙版", role: .destructive) { removeSelected(i) }
+                        }
+                        .font(.system(size: 11))
+                        .buttonStyle(.bordered)
+                    } else if section == .light {
+                        VStack(spacing: 3) {
+                            DarkroomControlRow(
+                                label: "局部曝光", value: $masks[i].adjustments.exposure,
+                                range: -3...3, step: 0.1, suffix: " EV", disabled: false
+                            )
+                            DarkroomControlRow(
+                                label: "局部对比", value: $masks[i].adjustments.contrast,
+                                range: -50...50, step: 1, suffix: "", disabled: false
+                            )
+                            DarkroomControlRow(
+                                label: "局部高光", value: $masks[i].adjustments.highlights,
+                                range: -100...100, step: 1, suffix: "", disabled: false
+                            )
+                            DarkroomControlRow(
+                                label: "局部阴影", value: $masks[i].adjustments.shadows,
+                                range: -100...100, step: 1, suffix: "", disabled: false
+                            )
+                        }
                     } else {
-                        Text("此类型尚不提供触控编辑。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(DarkroomStyle.secondary)
+                        VStack(spacing: 3) {
+                            DarkroomControlRow(
+                                label: "局部色温", value: $masks[i].adjustments.temperature,
+                                range: -100...100, step: 1, suffix: "", disabled: false
+                            )
+                            DarkroomControlRow(
+                                label: "局部饱和", value: $masks[i].adjustments.saturation,
+                                range: -100...100, step: 1, suffix: "", disabled: false
+                            )
+                        }
                     }
-
-                    Text("区域内的调整")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DarkroomStyle.primary)
-                    DarkroomControlRow(
-                        label: "局部曝光", value: $masks[i].adjustments.exposure,
-                        range: -3...3, step: 0.1, suffix: " EV", disabled: false
-                    )
-                    DarkroomControlRow(
-                        label: "局部色温", value: $masks[i].adjustments.temperature,
-                        range: -100...100, step: 1, suffix: "", disabled: false
-                    )
-                    DarkroomControlRow(
-                        label: "局部对比", value: $masks[i].adjustments.contrast,
-                        range: -50...50, step: 1, suffix: "", disabled: false
-                    )
-                    DarkroomControlRow(
-                        label: "局部饱和", value: $masks[i].adjustments.saturation,
-                        range: -100...100, step: 1, suffix: "", disabled: false
-                    )
-                    DarkroomControlRow(
-                        label: "局部高光", value: $masks[i].adjustments.highlights,
-                        range: -100...100, step: 1, suffix: "", disabled: false
-                    )
-                    DarkroomControlRow(
-                        label: "局部阴影", value: $masks[i].adjustments.shadows,
-                        range: -100...100, step: 1, suffix: "", disabled: false
-                    )
-
-                    HStack {
-                        Button("复位当前蒙版") { resetSelected(i) }
-                        Spacer()
-                        Button("删除蒙版", role: .destructive) { removeSelected(i) }
-                    }
-                    .font(.system(size: 11))
-                    .buttonStyle(.bordered)
                 }
             }
-
-            Text("局部位置直接在上方照片上操作；下方调整区域参数。蒙版坐标与导出分辨率无关，画笔暂未开放。")
-                .font(.system(size: 10))
-                .foregroundStyle(DarkroomStyle.secondary)
         }
     }
 }
-

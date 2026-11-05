@@ -21,11 +21,11 @@ struct DarkroomPanel<Content: View>: View {
 
     var body: some View {
         content
-            .padding(16)
+            .padding(11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 18))
+            .background(DarkroomStyle.surface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(
-                RoundedRectangle(cornerRadius: 18)
+                RoundedRectangle(cornerRadius: 12)
                     .stroke(DarkroomStyle.line, lineWidth: 1)
             )
     }
@@ -37,12 +37,12 @@ struct DarkroomSectionTitle: View {
     let subtitle: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
             Text(number)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(DarkroomStyle.accent)
             Text(title)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(DarkroomStyle.primary)
             Spacer(minLength: 4)
             Text(subtitle)
@@ -61,10 +61,10 @@ struct DarkroomChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                .font(.system(size: 11, weight: selected ? .semibold : .medium))
                 .foregroundStyle(selected ? DarkroomStyle.background : DarkroomStyle.secondary)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
                 .background(
                     selected ? DarkroomStyle.accent : DarkroomStyle.raised,
                     in: Capsule()
@@ -117,10 +117,10 @@ struct FilmStockCard: View {
                 }
                 .opacity(selected ? 0.82 : 0.75)
 
-                Spacer(minLength: 10)
+                Spacer(minLength: 6)
 
                 Text(detail)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -141,7 +141,7 @@ struct FilmStockCard: View {
             }
             .padding(12)
             .foregroundStyle(selected ? DarkroomStyle.background : DarkroomStyle.primary)
-            .frame(width: 166, height: 120, alignment: .leading)
+            .frame(width: 145, height: 102, alignment: .leading)
             .background(
                 selected ? DarkroomStyle.accent : DarkroomStyle.raised,
                 in: RoundedRectangle(cornerRadius: 12)
@@ -159,6 +159,8 @@ struct FilmStockCard: View {
     }
 }
 
+/// One-line Lightroom-style control: 44pt touch target despite compact
+/// typography. Tapping the value opens step-accurate precision controls.
 struct DarkroomControlRow: View {
     let label: String
     @Binding var value: Double
@@ -166,6 +168,19 @@ struct DarkroomControlRow: View {
     let step: Double
     let suffix: String
     let disabled: Bool
+
+    @State private var showingPrecision = false
+    @State private var precisionText = ""
+
+    private var decimals: Int {
+        if step < 0.01 { return 3 }
+        if step < 1 { return 2 }
+        return 0
+    }
+
+    private func formatted(_ number: Double) -> String {
+        String(format: "%.*f", decimals, number)
+    }
 
     private var maximumStepIndex: Int {
         Int(((range.upperBound - range.lowerBound) / step).rounded())
@@ -176,55 +191,117 @@ struct DarkroomControlRow: View {
         return min(maximumStepIndex, max(0, raw))
     }
 
-    /// Use integer step indices: e.g. print exposure 1.00 -> 0.95 -> 0.90,
-    /// and M/Y shift 0.00 -> -0.05. No accumulating FP rounding drift.
     private func adjust(direction: Int) {
         guard !disabled else { return }
         let target = min(maximumStepIndex, max(0, currentStepIndex + direction))
         value = min(range.upperBound, max(range.lowerBound,
             range.lowerBound + Double(target) * step))
+        precisionText = formatted(value)
     }
 
-    private func stepButton(_ name: String, direction: Int) -> some View {
-        Button {
-            adjust(direction: direction)
-        } label: {
-            Image(systemName: name)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DarkroomStyle.primary)
-                .frame(width: 44, height: 44)
-                .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 11))
-                .contentShape(Rectangle())
+    private func applyPreciseNumber() {
+        let text = precisionText.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        if let proposed = Double(text), proposed.isFinite {
+            let steps = ((proposed - range.lowerBound) / step).rounded()
+            let snapped = range.lowerBound + steps * step
+            value = min(range.upperBound, max(range.lowerBound, snapped))
         }
-        .buttonStyle(.plain)
-        .disabled(disabled ||
-                  (direction < 0 ? currentStepIndex == 0 : currentStepIndex == maximumStepIndex))
-        .opacity(direction < 0 && currentStepIndex == 0 ? 0.35 :
-                 direction > 0 && currentStepIndex == maximumStepIndex ? 0.35 : 1.0)
-        .accessibilityLabel(label + (direction < 0 ? "减少" : "增加"))
-        .accessibilityValue(String(format: "%.2f", value))
+        showingPrecision = false
+    }
+
+    private var precisionPanel: some View {
+        NavigationStack {
+            VStack(spacing: 14) {
+                Text(label + " · 精确调整")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DarkroomStyle.primary)
+                HStack(spacing: 12) {
+                    Button { adjust(direction: -1) } label: {
+                        Image(systemName: "minus")
+                            .frame(width: 44, height: 44)
+                            .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .disabled(disabled || currentStepIndex == 0)
+
+                    TextField("数值", text: $precisionText)
+                        .keyboardType(.numbersAndPunctuation)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 20, weight: .medium, design: .monospaced))
+                        .padding(.vertical, 9)
+                        .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityLabel(label + " 数值输入")
+
+                    Button { adjust(direction: 1) } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 44, height: 44)
+                            .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .disabled(disabled || currentStepIndex == maximumStepIndex)
+                }
+                .foregroundStyle(DarkroomStyle.primary)
+                .buttonStyle(.plain)
+                Text("允许范围 " + formatted(range.lowerBound) + " ～ " +
+                     formatted(range.upperBound) + suffix)
+                    .font(.system(size: 11))
+                    .foregroundStyle(DarkroomStyle.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(DarkroomStyle.background.ignoresSafeArea())
+            .navigationTitle("精确调整")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showingPrecision = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("应用") { applyPreciseNumber() }
+                        .disabled(disabled)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.height(270)])
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text(label)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(DarkroomStyle.primary)
-                Spacer()
-                Text(String(format: "%.2f", value) + suffix)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+        HStack(spacing: 7) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DarkroomStyle.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(width: 77, alignment: .leading)
+                .accessibilityAddTraits(.isStaticText)
+
+            Slider(value: $value, in: range, step: step)
+                .tint(DarkroomStyle.accent)
+                .frame(minHeight: 44)
+                .accessibilityLabel(label)
+                .disabled(disabled)
+
+            Button {
+                precisionText = formatted(value)
+                showingPrecision = true
+            } label: {
+                Text(formatted(value) + suffix)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(DarkroomStyle.accent)
-                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 76, alignment: .trailing)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            HStack(spacing: 9) {
-                stepButton("minus", direction: -1)
-                Slider(value: $value, in: range, step: step)
-                    .tint(DarkroomStyle.accent)
-                    .accessibilityLabel(label)
-                stepButton("plus", direction: 1)
-            }
+            .buttonStyle(.plain)
             .disabled(disabled)
+            .accessibilityLabel(label + " 精确输入")
+            .accessibilityValue(formatted(value) + suffix)
+        }
+        .frame(minHeight: 44)
+        .sheet(isPresented: $showingPrecision) {
+            precisionPanel
         }
     }
 }
