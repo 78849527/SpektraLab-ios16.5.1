@@ -71,6 +71,7 @@ struct FilmSettings: Equatable, Codable {
             "exposure_compensation_ev": exposureEV,
             "grain_amount": grainAmount,
             "halation_amount": halationAmount,
+            "halation_active": halationAmount > 0,
             "print_exposure": printExposure,
             "m_filter_shift": magentaShift,
             "y_filter_shift": yellowShift
@@ -92,7 +93,10 @@ struct FilmSettings: Equatable, Codable {
         if printStock != previous.printStock { changes["print_stock"] = printStock }
         if exposureEV != previous.exposureEV { changes["exposure_compensation_ev"] = exposureEV }
         if grainAmount != previous.grainAmount { changes["grain_amount"] = grainAmount }
-        if halationAmount != previous.halationAmount { changes["halation_amount"] = halationAmount }
+        if halationAmount != previous.halationAmount {
+            changes["halation_amount"] = halationAmount
+            changes["halation_active"] = halationAmount > 0
+        }
         if printExposure != previous.printExposure { changes["print_exposure"] = printExposure }
         if magentaShift != previous.magentaShift { changes["m_filter_shift"] = magentaShift }
         if yellowShift != previous.yellowShift { changes["y_filter_shift"] = yellowShift }
