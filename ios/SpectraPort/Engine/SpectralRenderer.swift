@@ -34,6 +34,50 @@ final class SpectralRenderer {
     private var appliedSettings: FilmSettings?
     private var desktopLayer2: DesktopLayer2Processor?
 
+    private struct CachedPrint {
+        let pixels: Data
+        let width: Int
+        let height: Int
+        let rowStridePixels: Int
+    }
+    private var cachedPrint: CachedPrint?
+
+    private func imageFromCachedPrint(
+        _ cache: CachedPrint, settings: FilmSettings
+    ) throws -> CGImage {
+        if needsDesktopLayer2(settings) {
+            return try cache.pixels.withUnsafeBytes { bytes in
+                guard let base = bytes.bindMemory(to: UInt16.self).baseAddress else {
+                    throw PortError.message("印相缓存失效")
+                }
+                return try gradeProcessor().apply(
+                    raw: base, width: cache.width, height: cache.height,
+                    rowStridePixels: cache.rowStridePixels,
+                    adjustments: settings.adjustments,
+                    masks: settings.masks
+                )
+            }
+        }
+
+        guard let provider = CGDataProvider(data: cache.pixels as CFData),
+              let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
+            throw PortError.message("原版印相缓存缺少 ProPhoto 颜色空间")
+        }
+        let bitmap = CGBitmapInfo.byteOrder16Little.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        )
+        guard let output = CGImage(
+            width: cache.width, height: cache.height,
+            bitsPerComponent: 16, bitsPerPixel: 64,
+            bytesPerRow: cache.rowStridePixels * 8,
+            space: proPhoto, bitmapInfo: bitmap, provider: provider,
+            decode: nil, shouldInterpolate: true, intent: .defaultIntent
+        ) else {
+            throw PortError.message("无法从原版印相缓存生成图像")
+        }
+        return output
+    }
+
     private func needsDesktopLayer2(_ settings: FilmSettings) -> Bool {
         (settings.adjustments.enabled && !settings.adjustments.isNeutral) ||
         settings.masks.contains { $0.enabled && !$0.isEmpty && $0.amount > 0 }
@@ -101,6 +145,7 @@ final class SpectralRenderer {
         engine = nil
         cachedPhotoID = nil
         cachedOriginal = nil
+        cachedPrint = nil
         appliedSettings = nil
         desktopLayer2 = nil
     }
@@ -209,6 +254,7 @@ final class SpectralRenderer {
         session = nil
         cachedPhotoID = nil
         cachedOriginal = nil
+        cachedPrint = nil
         appliedSettings = nil
 
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
@@ -315,6 +361,25 @@ final class SpectralRenderer {
 
     private func renderSynchronously(_ data: Data, photoID: UUID,
                                      settings: FilmSettings) throws -> RenderedPhoto {
+        // Curves, grading and masks are *after* the chemical/physical print.
+        // Avoid recomputing the 81-wavelength negative/print when only Layer2
+        // changed; preserve the exact RGBA16 print as a memory-bounded cache.
+        if cachedPhotoID == photoID,
+           let previous = appliedSettings,
+           previous.samePhysicalPrint(as: settings),
+           let cache = cachedPrint,
+           let original = cachedOriginal {
+            let start = ProcessInfo.processInfo.systemUptime
+            let graded = try imageFromCachedPrint(cache, settings: settings)
+            appliedSettings = settings
+            return RenderedPhoto(
+                original: original,
+                processed: UIImage(cgImage: graded),
+                elapsedMS: (ProcessInfo.processInfo.systemUptime - start) * 1000,
+                parametersVerified: true
+            )
+        }
+
         let engine = try ensureEngine()
         if cachedPhotoID != photoID || session == nil ||
             appliedSettings?.softness != settings.softness {
@@ -351,55 +416,21 @@ final class SpectralRenderer {
         guard let raw = output.rgba16, output.width > 0, output.height > 0 else {
             throw PortError.message("引擎没有返回像素")
         }
-        // Mac Layer 2 runs on the *encoded ProPhoto print*, after the
-        // spectral engine. The neutral branch below remains byte-exact.
-        if needsDesktopLayer2(settings) {
-            let graded = try gradeProcessor().apply(
-                raw: raw,
-                width: Int(output.width),
-                height: Int(output.height),
-                rowStridePixels: Int(output.row_stride_px),
-                adjustments: settings.adjustments,
-                masks: settings.masks
-            )
-            guard let original = cachedOriginal else {
-                throw PortError.message("预览原图缓存丢失")
-            }
-            return RenderedPhoto(
-                original: original,
-                processed: UIImage(cgImage: graded),
-                elapsedMS: output.elapsed_ms,
-                parametersVerified: true
-            )
+        // Keep one immutable copy of the native ProPhoto print. The C ABI
+        // spk_result's pointers are invalid after spk_result_free.
+        guard output.row_stride_px >= output.width else {
+            throw PortError.message("光谱印相缓存行跨度错误")
         }
-        // Retain the original ProPhoto RGB / RGBA16 management of v0.2.1.
-        // Copy the row-strided pixels before the native texture is released.
         let count = Int(output.row_stride_px) * Int(output.height) * 8
         let copied = Data(bytes: raw, count: count)
-        guard let provider = CGDataProvider(data: copied as CFData) else {
-            throw PortError.message("无法创建图像提供器")
-        }
-        guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
-            throw PortError.message("系统缺少 ProPhoto RGB 色彩空间")
-        }
-        let bitmap = CGBitmapInfo.byteOrder16Little.union(
-            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-        )
-        guard let rendered = CGImage(
+        let cache = CachedPrint(
+            pixels: copied,
             width: Int(output.width),
             height: Int(output.height),
-            bitsPerComponent: 16,
-            bitsPerPixel: 64,
-            bytesPerRow: Int(output.row_stride_px) * 8,
-            space: proPhoto,
-            bitmapInfo: bitmap,
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        ) else {
-            throw PortError.message("无法从光谱结果创建图片")
-        }
+            rowStridePixels: Int(output.row_stride_px)
+        )
+        cachedPrint = cache
+        let rendered = try imageFromCachedPrint(cache, settings: settings)
         guard let original = cachedOriginal else {
             throw PortError.message("预览原图缓存丢失")
         }
