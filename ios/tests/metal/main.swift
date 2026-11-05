@@ -1,4 +1,5 @@
 import CoreGraphics
+import ImageIO
 import Foundation
 import Metal
 
@@ -172,6 +173,61 @@ check(abs(channel(paddedImage, 4, 4, 0) - Double(32768)/65535) < 1e-5,
       "native 16-bit padded row input bypass preserves source pixels")
 
 print("METAL_GPU_FIXTURES_PASS: neutral, exposure, red curve, radial, linear, luminance, colour range, colour balance, vignette, inverse mask, padded rows")
+
+// Exercise the actual new Build 21 GPU → CIImage → JPEG/PNG export path.
+// Decoder dimensions and both images' central pixels must agree. Merely
+// compiling CIImage(mtlTexture:) is insufficient: some GPU pixel formats
+// are not supported until Core Image actually accesses their texture.
+var exportGrade = Adjustments.default
+exportGrade.exposure = 0.5
+func verifiedExport(_ jpeg: Bool) throws -> CGImage {
+    let url = try input.withUnsafeBufferPointer { pixels in
+        try processor.export(
+            raw: pixels.baseAddress!, width: width, height: height,
+            rowStridePixels: width, adjustments: exportGrade,
+            jpeg: jpeg)
+    }
+    defer { try? FileManager.default.removeItem(at: url) }
+    check(url.pathExtension == (jpeg ? "jpg" : "png"),
+          "encoded output extension")
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        fatalError("Build 21 direct GPU export failed to decode")
+    }
+    check(image.width == width && image.height == height,
+          "encoded image is not cropped or wrongly oriented")
+    check((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) ?? 0 > 0,
+          "encoded file is nonempty")
+    return image
+}
+let jpegPhoto = try verifiedExport(true)
+let pngPhoto = try verifiedExport(false)
+// ImageIO decoder returns 8-bit sRGB here, whereas the source print is
+// encoded 16-bit ProPhoto. Both encoders must agree within JPEG tolerance.
+func meanCentralRGB(_ image: CGImage) -> SIMD3<Double> {
+    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: width * height * 4)
+    defer { bytes.deallocate() }
+    let info = CGBitmapInfo.byteOrder32Big.union(
+        CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
+    guard let ctx = CGContext(
+        data: bytes, width: width, height: height, bitsPerComponent: 8,
+        bytesPerRow: width * 4, space: cs, bitmapInfo: info.rawValue
+    ) else { fatalError("JPEG/PNG test context unavailable") }
+    ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let mid = (2 * width + 2) * 4
+    return SIMD3<Double>(
+        Double(bytes[mid]) / 255,
+        Double(bytes[mid+1]) / 255,
+        Double(bytes[mid+2]) / 255)
+}
+let jpgPixel = meanCentralRGB(jpegPhoto)
+let pngPixel = meanCentralRGB(pngPhoto)
+check(abs(jpgPixel.x - pngPixel.x) < 0.06 &&
+      abs(jpgPixel.y - pngPixel.y) < 0.06 &&
+      abs(jpgPixel.z - pngPixel.z) < 0.06,
+      "Build 21 GPU JPEG/PNG encode agreement")
+print("BUILD21_GPU_EXPORT_PASS: direct Metal texture → CIImage → JPEG/PNG")
 
 // Real original-kernel pixel path at the two supported camera-size tiers.
 // The runner is not the iPhone's thermal/memory environment; success is
