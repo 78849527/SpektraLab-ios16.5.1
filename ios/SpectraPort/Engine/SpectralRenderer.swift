@@ -113,6 +113,7 @@ final class SpectralRenderer {
         data: Data,
         settings: FilmSettings,
         format: PreviewExporter.Format,
+        geometry: PhotoGeometry,
         limit: ExportLimit,
         progress: @escaping (String) -> Void,
         completion: @escaping (Result<HighResExportResult, Error>) -> Void
@@ -123,7 +124,7 @@ final class SpectralRenderer {
             }
             let outcome = Result {
                 try self.exportSynchronously(data, settings: settings, format: format,
-                                             limit: limit, report: report)
+                                             geometry: geometry, limit: limit, report: report)
             }
             DispatchQueue.main.async { completion(outcome) }
         }
@@ -154,6 +155,7 @@ final class SpectralRenderer {
         _ data: Data,
         settings: FilmSettings,
         format: PreviewExporter.Format,
+        geometry: PhotoGeometry,
         limit: ExportLimit,
         report: (String) -> Void
     ) throws -> HighResExportResult {
@@ -219,16 +221,23 @@ final class SpectralRenderer {
                 adjustments: settings.adjustments,
                 masks: settings.masks
             )
-            url = try FullSizeExporter.write(graded, format: format)
+            url = try FullSizeExporter.write(graded, format: format, geometry: geometry)
         } else {
             // Identical to the original port when Layer 2 is neutral.
-            url = try FullSizeExporter.write(output, format: format)
+            url = try FullSizeExporter.write(output, format: format, geometry: geometry)
         }
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let bytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let pixels = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil)
+                  as? [CFString: Any],
+              let exportedWidth = (pixels[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let exportedHeight = (pixels[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue else {
+            throw PortError.message("裁剪导出无法验证实际文件尺寸")
+        }
         return HighResExportResult(
             url: url, fileFormat: format == .jpeg ? "JPEG" : "PNG", fileBytes: bytes,
-            width: Int(output.width), height: Int(output.height),
+            width: exportedWidth, height: exportedHeight,
             originalWidth: frame.nativeWidth, originalHeight: frame.nativeHeight,
             elapsedMS: output.elapsed_ms
         )

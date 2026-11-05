@@ -130,7 +130,8 @@ enum FullSizeExporter {
 
     /// The raw native RGBA16 storage is borrowed only until this synchronous
     /// encoder finishes. No full-resolution UIImage or extra RGBA16 copy.
-    static func write(_ output: spk_result, format: PreviewExporter.Format) throws -> URL {
+    static func write(_ output: spk_result, format: PreviewExporter.Format,
+                      geometry: PhotoGeometry = .identity) throws -> URL {
         guard let raw = output.rgba16, output.width > 0, output.height > 0,
               output.row_stride_px >= output.width else {
             throw PortError.message("光谱引擎未返回有效高清像素")
@@ -164,7 +165,9 @@ enum FullSizeExporter {
             .appendingPathComponent("SpectraPort-full-" + UUID().uuidString)
             .appendingPathExtension(format.fileExtension)
         let context = CIContext(options: [.cacheIntermediates: false])
-        let image = CIImage(cgImage: picture)
+        // Geometry runs on the ProPhoto output before the sRGB encoder.
+        // It uses the same crop/orientation transform as the 1440px preview.
+        let image = geometry.apply(to: CIImage(cgImage: picture))
         do {
             if format == .jpeg {
                 try context.writeJPEGRepresentation(
@@ -190,7 +193,8 @@ enum FullSizeExporter {
     /// Same full-size ProPhoto → sRGB encoder as original native export.
     /// Called when the desktop Metal Layer 2 pass returns a tagged CGImage.
     /// Both preview and export therefore use the same graded pixel pipeline.
-    static func write(_ picture: CGImage, format: PreviewExporter.Format) throws -> URL {
+    static func write(_ picture: CGImage, format: PreviewExporter.Format,
+                      geometry: PhotoGeometry = .identity) throws -> URL {
         guard let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
               let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb),
               let color = picture.colorSpace,
@@ -201,7 +205,9 @@ enum FullSizeExporter {
             .appendingPathComponent("SpectraPort-layer2-full-" + UUID().uuidString)
             .appendingPathExtension(format.fileExtension)
         let context = CIContext(options: [.cacheIntermediates: false])
-        let image = CIImage(cgImage: picture)
+        // Geometry runs on the ProPhoto output before the sRGB encoder.
+        // It uses the same crop/orientation transform as the 1440px preview.
+        let image = geometry.apply(to: CIImage(cgImage: picture))
         do {
             if format == .jpeg {
                 try context.writeJPEGRepresentation(

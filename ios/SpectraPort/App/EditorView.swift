@@ -38,6 +38,10 @@ final class EditorModel: ObservableObject {
     @Published var softness = 0.0
     @Published var grade = Adjustments.default
     @Published var masks: [EditMask] = []
+    @Published private(set) var photoGeometry = PhotoGeometry.identity
+    @Published private(set) var cropEditingImage: UIImage?
+    @Published private(set) var unframedProcessed: UIImage?
+    private var unframedOriginal: UIImage?
 
     private var sourceData: Data?
     private var photoID = UUID()
@@ -52,6 +56,30 @@ final class EditorModel: ObservableObject {
     var onSuccessfulRender: ((FilmSettings) -> Void)?
 
     var currentSettings: FilmSettings { snapshot() }
+
+    /// Geometry is photo-specific, not part of a reusable film/paper preset.
+    /// Re-render only the already-processed preview when moving crop handles.
+    func setPhotoGeometry(_ next: PhotoGeometry) {
+        guard next != photoGeometry else { return }
+        let orientationChanged =
+            next.quarterTurns != photoGeometry.quarterTurns ||
+            next.straightenDegrees != photoGeometry.straightenDegrees ||
+            next.flipHorizontal != photoGeometry.flipHorizontal ||
+            next.flipVertical != photoGeometry.flipVertical
+        photoGeometry = next
+        if let full = unframedProcessed {
+            if orientationChanged || cropEditingImage == nil {
+                cropEditingImage = PhotoGeometryPreview.render(
+                    full, geometry: next, onlyOrientation: true)
+            }
+            processed = PhotoGeometryPreview.render(full, geometry: next)
+        }
+        if let original = unframedOriginal {
+            self.original = PhotoGeometryPreview.render(original, geometry: next)
+        }
+        previousProcessed = nil
+        previewSequence += 1
+    }
 
     func loadLook(_ settings: FilmSettings) {
         guard !isBusy else { return }
@@ -159,8 +187,15 @@ final class EditorModel: ObservableObject {
                     }
                     self.lastSuccessfulPhotoID = capturedPhotoID
                     self.lastSuccessfulSettings = captured
-                    self.original = photo.original
-                    self.processed = photo.processed
+                    self.unframedOriginal = photo.original
+                    self.unframedProcessed = photo.processed
+                    self.cropEditingImage = PhotoGeometryPreview.render(
+                        photo.processed, geometry: self.photoGeometry,
+                        onlyOrientation: true)
+                    self.original = PhotoGeometryPreview.render(
+                        photo.original, geometry: self.photoGeometry)
+                    self.processed = PhotoGeometryPreview.render(
+                        photo.processed, geometry: self.photoGeometry)
                     self.lastElapsedMS = photo.elapsedMS
                     self.lastParametersVerified = photo.parametersVerified
                     self.previewSequence += 1
@@ -238,6 +273,10 @@ final class EditorModel: ObservableObject {
         capturedFormat = format
         original = nil
         processed = nil
+        unframedOriginal = nil
+        unframedProcessed = nil
+        cropEditingImage = nil
+        photoGeometry = .identity
         previousProcessed = nil
         compare = false
         pixelChangePercent = nil
@@ -288,8 +327,10 @@ final class EditorModel: ObservableObject {
         exportPhase = "准备高清导出…"
         status = "高清导出执行中，预览已临时释放 GPU 缓存"
         let settings = snapshot()
+        let geometry = photoGeometry
         renderer.exportOriginal(
-            data: data, settings: settings, format: format, limit: limitOverride ?? exportLimit,
+            data: data, settings: settings, format: format,
+            geometry: geometry, limit: limitOverride ?? exportLimit,
             progress: { [weak self] stage in
                 self?.exportPhase = stage
             },
@@ -374,6 +415,7 @@ private enum GradeSubsection: String, CaseIterable {
 private enum AdjustmentGroup: String, CaseIterable {
     case camera = "拍摄与胶片"
     case print = "暗房冲印"
+    case geometry = "裁剪"
 }
 
 private enum PaperBrowseFilter: String, CaseIterable {
@@ -437,6 +479,16 @@ struct EditorView: View {
 
     /// The UIKit photo loupe and SwiftUI handles share one exact aspect-fit
     /// coordinate system while local geometry is being manipulated.
+    private var editingCropOnPhoto: Bool {
+        selectedTab == .adjust && adjustmentGroup == .geometry &&
+        model.cropEditingImage != nil && !model.compare && !showPreviousFilm
+    }
+
+    private var photoGeometryBinding: Binding<PhotoGeometry> {
+        Binding(get: { model.photoGeometry },
+                set: { model.setPhotoGeometry($0) })
+    }
+
     private var editingMaskOnPhoto: Bool {
         selectedTab == .grade && gradeSubsection == .local &&
         model.processed != nil && !model.compare && !showPreviousFilm
@@ -712,9 +764,16 @@ struct EditorView: View {
 
             if let image = model.compare
                 ? model.original
-                : (showPreviousFilm ? model.previousProcessed : model.processed) {
+                : (showPreviousFilm ? model.previousProcessed
+                    : (editingCropOnPhoto ? model.cropEditingImage
+                        : (editingMaskOnPhoto ? model.unframedProcessed : model.processed))) {
                 GeometryReader { frame in
-                    if editingMaskOnPhoto {
+                    if editingCropOnPhoto {
+                        PhotoCropCanvas(
+                            image: image, geometry: photoGeometryBinding
+                        )
+                        .frame(width: frame.size.width, height: frame.size.height)
+                    } else if editingMaskOnPhoto {
                         // Local masks use a dedicated, fixed aspect-fit canvas:
                         // no UIScrollView, zoom restoration, or changing image
                         // intrinsic size may change the photo/handle transform.
@@ -1430,7 +1489,13 @@ struct EditorView: View {
                 .pickerStyle(.segmented)
 
                 VStack(spacing: 0) {
-                    if adjustmentGroup == .camera {
+                    if adjustmentGroup == .geometry {
+                        PhotoGeometryControls(
+                            geometry: photoGeometryBinding,
+                            imageSize: model.cropEditingImage?.size ?? CGSize(width: 3, height: 2),
+                            disabled: model.isBusy || model.isRendering
+                        )
+                    } else if adjustmentGroup == .camera {
                         DarkroomControlRow(
                             label: "曝光补偿", value: $model.exposureEV,
                             range: -3...3, step: 0.1, suffix: " EV",
@@ -1457,7 +1522,7 @@ struct EditorView: View {
                         Text("0 = 完全关闭光晕处理；1 = 胶片默认反射面积。普通画面效果较弱，夜间点光源边缘更明显。")
                             .font(.system(size: 10))
                             .foregroundStyle(DarkroomStyle.secondary)
-                    } else {
+                    } else if adjustmentGroup == .print {
                         DarkroomControlRow(
                             label: "冲印亮度", value: printBrightnessStops,
                             range: -3...3, step: 0.1, suffix: " EV",
@@ -1475,6 +1540,7 @@ struct EditorView: View {
                         )
                     }
                 }
+                if adjustmentGroup != .geometry {
                 DisclosureGroup(isExpanded: $showingQuickHelp) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("数码柔化：0 为原始锐度；1 为减弱边缘反差，不恢复 JPEG 丢失细节。")
@@ -1494,9 +1560,10 @@ struct EditorView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(DarkroomStyle.secondary)
                 } else {
-                    Text("实时预览已关闭。使用底部「立即预览」应用参数。")
+                    Text("实时预览已关闭。使用预览区「应用调整」应用参数。")
                         .font(.system(size: 10))
                         .foregroundStyle(DarkroomStyle.secondary)
+                }
                 }
             }
         }
@@ -1682,6 +1749,10 @@ struct EditorView: View {
             }
             .onChange(of: selectedTab) { _ in
                 enterMaskEditingIfNeeded()
+                if editingCropOnPhoto { clearInlineHighResolution(); fitWholePhoto() }
+            }
+            .onChange(of: adjustmentGroup) { _ in
+                if editingCropOnPhoto { clearInlineHighResolution(); fitWholePhoto() }
             }
             .onChange(of: gradeSubsection) { _ in
                 enterMaskEditingIfNeeded()
