@@ -43,35 +43,35 @@ jobs:
           test -f "$APP/SpectraPort"
           test ! -f "$APP/SpectraPort.debug.dylib"
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx "16.0"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "13"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "14"
           otool -L "$APP/SpectraPort"
       - name: Package unsigned RELEASE IPA for manual signing
         run: |
           mkdir -p ios/build/package/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/package/Payload/
           cd ios/build/package
-          zip -q -r ../SpectraPort-ios16-v0.10.0-inline-zoom-photos-unsigned.ipa Payload
+          zip -q -r ../SpectraPort-ios16-v0.11.0-camera-softness-unsigned.ipa Payload
       - name: Upload device build
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-ios16-v0.10.0-inline-zoom-photos-unsigned
-          path: ios/build/SpectraPort-ios16-v0.10.0-inline-zoom-photos-unsigned.ipa
+          name: SpectraPort-ios16-v0.11.0-camera-softness-unsigned
+          path: ios/build/SpectraPort-ios16-v0.11.0-camera-softness-unsigned.ipa
           if-no-files-found: error
       - name: Publish public IPA download (unofficial prerelease)
         if: github.event_name == 'push' && github.ref == 'refs/heads/port/ios16-native-engine'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FILE="ios/build/SpectraPort-ios16-v0.10.0-inline-zoom-photos-unsigned.ipa"
-          TAG="ios16-v0.10.0"
+          FILE="ios/build/SpectraPort-ios16-v0.11.0-camera-softness-unsigned.ipa"
+          TAG="ios16-v0.11.0"
           test -s "$FILE"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$FILE" --clobber
           else
             gh release create "$TAG" "$FILE" \
               --target "$GITHUB_SHA" \
-              --title "SpectraPort iOS 16 v0.10.0 (unofficial test)" \
-              --notes "Unofficial iOS 16 test port based on SpektraLab. In-editor pinch/double-tap zoom automatically upgrades to original full-tier 12.5MP render on demand without leaving preview. Adds direct local JPEG/PNG PhotoKit add-only library save. Original C++/Metal engine and live preview retained. The IPA is unsigned and requires manual signing. Not yet validated on all iPhone hardware." \
+              --title "SpectraPort iOS 16 v0.11.0 (unofficial test)" \
+              --notes "Unofficial iOS 16 test port based on SpektraLab. Adds local AVFoundation camera capture: JPEG, HEIF, device-gated RAW DNG and ProRAW. Core Image develops DNG for spectral editing while preserving DNG; adds de-sharpening slider applied equally to preview/export, resets pinch zoom between sources, and fixes export pixel cap. No cloud upload. The IPA is unsigned and requires manual signing. Not yet validated on all iPhone hardware." \
               --prerelease
           fi
           gh release view "$TAG" --json url -q .url

@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.10.0 / Build 13
+## Current iOS build: v0.11.0 / Build 14
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -96,6 +96,23 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   User authorization is requested only when saving. When permission is denied,
   the app reports why instead of silently failing. It retains the export file
   for re-sharing, and never moves it when writing the Photos asset.
+- v0.11.0: AVFoundation back-camera workflow with JPEG and supported HEIF,
+  Bayer RAW/DNG and Apple ProRAW modes. RAW modes are shown only when the
+  current camera reports compatible pixel formats. RAW DNG is preserved under
+  app-local Application Support and offered to export/share separately.
+  Core Image CIRAWFilter develops a memory-bounded scene image into sRGB JPEG
+  for the original SpektraLab spectral engine; RAW mosaics are not sent into
+  the engine directly. Capturing returns to the same editor and presets.
+- Added "降低数码锐利感" (0..1) input pre-processing. Core Image subtly
+  reduces excessive spatial high-frequency contrast using Gaussian low-pass
+  mixed into the captured image *before* measured film and paper rendering;
+  native film grain is preserved. This cannot mathematically undo iPhone ISP
+  sharpening already baked into HEIF/JPEG. The same strength is used by the
+  preview and full-resolution export and saved with presets. Older presets
+  decode with a default of zero. No original C++ model parameters changed.
+- Fixes UIKit zoom state leaking into subsequent photos, and image decoder
+  overstepping the selected 6MP/12.5MP ceiling. Full-sized source pixels
+  are retained when at or below the ceiling.
 - Continuous realtime preview, RAW-specialized decode, high-res output above
   12.5 MP, advanced peak-memory profiling, and all profile/paper parity remain
   future work. Some film/paper
