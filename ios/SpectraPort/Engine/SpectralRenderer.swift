@@ -15,17 +15,20 @@ enum PortError: LocalizedError {
 struct RenderedPhoto {
     let original: UIImage
     let processed: UIImage
+    let elapsedMS: Double
 }
 
-/// A serial queue owns the native engine/session lifetimes and keeps GPU work
-/// off the main thread. This deliberately calls the upstream C ABI, not a LUT.
+/// Serial GPU work, with the actual original engine/C ABI. For v0.3, each
+/// Apply action gets its own engine/session, preserving the verified v0.2 path.
+/// Session persistence and live slider debouncing come after device profiling.
 final class SpectralRenderer {
     private let queue = DispatchQueue(label: "com.twogou.spectralport.engine", qos: .userInitiated)
     private let context = CIContext(options: [.cacheIntermediates: false])
 
-    func render(data: Data, completion: @escaping (Result<RenderedPhoto, Error>) -> Void) {
+    func render(data: Data, settings: FilmSettings,
+                completion: @escaping (Result<RenderedPhoto, Error>) -> Void) {
         queue.async {
-            let result = Result { try self.renderSynchronously(data) }
+            let result = Result { try self.renderSynchronously(data, settings: settings) }
             DispatchQueue.main.async { completion(result) }
         }
     }
@@ -35,12 +38,11 @@ final class SpectralRenderer {
         return String(cString: text)
     }
 
-    private func renderSynchronously(_ data: Data) throws -> RenderedPhoto {
+    private func renderSynchronously(_ data: Data, settings: FilmSettings) throws -> RenderedPhoto {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw PortError.message("无法解码图片")
         }
-        // iPhone memory budget: decode a small preview first. Do not hand the
-        // engine a full-resolution 45MP RGBAf frame during interaction.
+        // Preserve the verified A15 memory budget: 1440 px interaction tier.
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -52,7 +54,6 @@ final class SpectralRenderer {
         guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
             throw PortError.message("系统缺少 ProPhoto RGB 色彩空间")
         }
-
         let width = thumbnail.width
         let height = thumbnail.height
         let input = CIImage(cgImage: thumbnail)
@@ -72,8 +73,6 @@ final class SpectralRenderer {
         }
         let original = UIImage(cgImage: thumbnail)
 
-        // XcodeGen bundles the complete tracked engine/resources folder
-        // beside the original Metal kernels, not a substitute colour profile.
         guard let resources = Bundle.main.resourceURL?.appendingPathComponent("engine"),
               FileManager.default.fileExists(atPath: resources.appendingPathComponent("spektrafilm_constants.bin").path) else {
             throw PortError.message("引擎资源未打包：engine/spektrafilm_constants.bin")
@@ -86,6 +85,7 @@ final class SpectralRenderer {
 
         var openReply: UnsafeMutablePointer<CChar>?
         defer { if let openReply { spk_string_free(openReply) } }
+        let delta = try settings.deltaJSON()
 
         let session: OpaquePointer? = floats.withUnsafeBufferPointer { buffer in
             var frame = spk_image(
@@ -94,8 +94,6 @@ final class SpectralRenderer {
                 height: UInt32(height),
                 channels: 4
             )
-            // Core Image handed us ProPhoto RGB pixels.
-            let delta = "{\"input_color_space\":\"ProPhoto RGB\",\"input_cctf_decoding\":true}"
             return delta.withCString { spk_open(engine, &frame, $0, &openReply) }
         }
         guard let session else {
@@ -113,8 +111,8 @@ final class SpectralRenderer {
         guard let raw = output.rgba16, output.width > 0, output.height > 0 else {
             throw PortError.message("引擎没有返回像素")
         }
-        // The result is gamma-encoded ProPhoto RGB RGBA16 with a padded row
-        // stride. Copy before spk_result_free releases the Metal texture.
+        // Original engine output: gamma-encoded ProPhoto RGB / RGBA16.
+        // Copy before the native result's retained Metal texture is released.
         let count = Int(output.row_stride_px) * Int(output.height) * 8
         let copied = Data(bytes: raw, count: count)
         guard let provider = CGDataProvider(data: copied as CFData) else {
@@ -138,6 +136,10 @@ final class SpectralRenderer {
         ) else {
             throw PortError.message("无法从引擎结果创建 CGImage")
         }
-        return RenderedPhoto(original: original, processed: UIImage(cgImage: rendered))
+        return RenderedPhoto(
+            original: original,
+            processed: UIImage(cgImage: rendered),
+            elapsedMS: output.elapsed_ms
+        )
     }
 }

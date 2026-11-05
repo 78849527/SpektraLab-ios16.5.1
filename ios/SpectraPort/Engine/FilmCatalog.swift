@@ -1,0 +1,82 @@
+import Foundation
+
+/// All entries are read from the upstream measured profile JSON shipped with
+/// the engine. No imitation LUT catalogue or hard-coded film names.
+enum FilmCatalog {
+    struct Stock: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let targetPrint: String?
+    }
+
+    private static let entries: [(stock: Stock, info: [String: Any])] = {
+        guard let folder = Bundle.main.resourceURL?.appendingPathComponent("engine/profiles"),
+              let urls = try? FileManager.default.contentsOfDirectory(
+                at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+        return urls.filter { $0.pathExtension.lowercased() == "json" }.compactMap { url in
+            guard let data = try? Data(contentsOf: url),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let info = json["info"] as? [String: Any],
+                  let stock = info["stock"] as? String,
+                  let name = info["name"] as? String else {
+                return nil
+            }
+            let candidate = Stock(id: stock, name: name, targetPrint: info["target_print"] as? String)
+            return (stock: candidate, info: info)
+        }
+    }()
+
+    // Initially expose measured colour-negative films, including cine
+    // negatives. Positive/B&W stocks require separate pairing verification.
+    static let films: [Stock] = entries.filter { item in
+        item.info["support"] as? String == "film" &&
+        item.info["stage"] as? String == "filming" &&
+        item.info["type"] as? String == "negative" &&
+        item.info["channel_model"] as? String == "color"
+    }.map(\.stock).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+    static let papers: [Stock] = entries.filter { item in
+        item.info["support"] as? String == "paper" &&
+        item.info["stage"] as? String == "printing" &&
+        item.info["channel_model"] as? String == "color"
+    }.map(\.stock).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+    static func filmName(_ id: String) -> String { films.first(where: { $0.id == id })?.name ?? id }
+    static func paperName(_ id: String) -> String { papers.first(where: { $0.id == id })?.name ?? id }
+}
+
+struct FilmSettings {
+    let filmStock: String
+    let printStock: String
+    let exposureEV: Double
+    let grainAmount: Double
+    let halationAmount: Double
+    let printExposure: Double
+    let magentaShift: Double
+    let yellowShift: Double
+
+    func deltaJSON() throws -> String {
+        // These exact field names and ranges come from engine/src/core/params.cpp.
+        // Keep colour-management fields identical to the successful v0.2.1 path.
+        let values: [String: Any] = [
+            "input_color_space": "ProPhoto RGB",
+            "input_cctf_decoding": true,
+            "film_stock": filmStock,
+            "print_stock": printStock,
+            "exposure_compensation_ev": exposureEV,
+            "grain_amount": grainAmount,
+            "halation_amount": halationAmount,
+            "print_exposure": printExposure,
+            "m_filter_shift": magentaShift,
+            "y_filter_shift": yellowShift
+        ]
+        let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw PortError.message("无法编码胶片参数")
+        }
+        return json
+    }
+}

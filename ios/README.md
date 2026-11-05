@@ -1,52 +1,40 @@
-# SpectraPort — native iOS 16.5.1 port of the SpektraLab engine
+# SpectraPort — native iOS 16.5.1 port of original SpektraLab
 
-This is an **unofficial source port** of [JamesQiu2005/SpektraLab](https://github.com/JamesQiu2005/SpektraLab).
-It is not a lookalike LUT application. The original C++20 pipeline, the spectral film/print model,
-the baked measured profiles, and the exact Metal shaders are the dependency.
+**Unofficial source port**, not endorsed by SpektraLab. Preserves the original
+C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current milestone
+## Current iOS build: v0.3.0 / Build 4
 
-M0: independently generated SwiftUI iPhone project, native static C++20 engine, iOS-targeted
-Metal library, the original C ABI, and a PhotoKit-to-ProPhoto RGB-to-engine live-tier render
-path. The UI limits interactive decode to a 1440-pixel edge.
+- Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
+- Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
+- Film catalogue is read from the original packaged \`engine/profiles/*.json\`, including
+  measured colour negative still and cine stocks (no fake LUT substitutes).
+- Paper catalogue reads original color photo-paper profiles.
+- UI controls send **real engine schema parameters** in the original
+  \`spk_open\` delta: film_stock, print_stock, exposure_compensation_ev,
+  grain_amount, halation_amount, print_exposure, m_filter_shift, y_filter_shift.
+- Film choice selects its preferred print paper if available. Paper may be
+  overridden manually. Parameters are rendered only on **Apply** to avoid
+  overloading an older iPhone with multiple in-flight sessions.
+- Preserves diagnostic homepage, editor back button and copyable diagnostics;
+  adds film, paper, parameters and measured engine render time.
+- Limits interactive preview to 1440px long edge.
+- Continuous realtime preview, RAW-specialized decode, full-resolution
+  export and full film/paper parity remain future work. Some film/paper
+  combinations may have model limitations; report any error using Copy Status.
 
-**Not yet validated on a real iPhone.** CI compilation and on-device rendering/parity must pass
-before calling this working or compatible. The IPA is unsigned and cannot be installed without
-user-side signing. RAW-specific decode and full-resolution export are not yet implemented.
+## Building and downloading
 
-## Build on macOS with Xcode
+Build workflow: \`.github/workflows/ios16.yml\`; on branch \`port/ios16-native-engine\`
+it uses iPhoneOS SDK, builds the upstream static engine and MSL kernels, and
+generates the unsigned iPhoneOS IPA. A successful build publishes an **unofficial
+GitHub prerelease** with a direct publicly accessible IPA asset.
 
-Requires Xcode with iOS SDK, command-line Metal compiler, and XcodeGen.
-
-```sh
-brew install xcodegen
-bash ios/scripts/build-engine.sh
-cd ios && xcodegen generate --spec project.yml
-xcodebuild -project SpectraPort.xcodeproj -scheme SpectraPort \
-  -sdk iphoneos -destination 'generic/platform=iOS' \
-  -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
-```
-
-The actual minimum deployment target is iOS 16.0; the target test device is iOS 16.5.1.
-The macOS app under modern_UI is unchanged.
-
-## Essential parity checks before release
-
-1. Confirm that iPhoneOS Metal links and all original kernels load.
-2. Confirm the original engine's startup math-mode probe passes with safe math.
-3. Render a shared reference input on macOS and iOS; compare film/print output by pixel,
-   not merely by visual impression.
-4. Verify the packed RGBA16 ProPhoto RGB output is colour-managed correctly by CoreGraphics.
-5. Measure peak memory on iPhone, verify preview cancellation/session release and test
-   out-of-memory handling before allowing full-resolution input.
-6. Validate signing/installation/launch on an **actual iOS 16.5.1 device**.
-
-Do not disable the engine's safety probe or replace the 81-wavelength model with a LUT to
-make CI pass. iOS-specific fixes belong in port-scoped changes.
+Unsigned apps require user-side signing. CI success is not proof of iOS 16.5.1
+runtime or every selected profile; on-device verification is still required.
 
 ## Legal
 
-The upstream app and engine are GPL-3.0-or-later. Film and paper profiles and print LUTs are
-CC BY-SA 4.0; preserve attribution, original notices and share-alike requirements. SpektraLab's
-name and icon are protected trademarks; this distributable uses its own name and must not imply
-it is an official release.
+Application/engine GPL-3.0-or-later; measured profile and print LUT
+data CC BY-SA 4.0. Keep upstream notices and attribution. SpektraLab name and
+icon belong to their holders; this app uses the distinct SpectraPort name.
