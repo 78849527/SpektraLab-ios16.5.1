@@ -38,6 +38,16 @@ jobs:
           assert "static func printExposure(stops: Double)" in mac_params
           assert "pow(2.0, -stops)" in mac_params
           assert "model.printExposure = pow(2, -stops)" in ios_editor
+          # The Windows desktop has two Layer2 implementations: WebGL for
+          # canvas and TS CPU for exports. Both must use the original
+          # Metal sampler's normalized x*N-0.5 texel-centre formula.
+          windows_gl = Path("desktop/src/canvas/glRenderer.ts").read_text()
+          windows_cpu = Path("desktop/src/shared/adjustments.ts").read_text()
+          mac_shader = Path("modern_UI/Spektrafilm/Spektrafilm/Canvas/Shaders.metal").read_text()
+          assert "table.sample(s, float2(x, (float(row) + 0.5) / 5.0))" in mac_shader
+          assert "float u = clamp(x, 0.0, 1.0);" in windows_gl
+          assert "const f = clamp(sat(x) * n - 0.5, 0, n - 1)" in windows_cpu
+          print("Mac original Metal, Windows WebGL and Windows CPU sampler contracts match")
           print("Mac curves, grading, masks and shared print defaults match upstream")
           PY
       - name: Compile desktop source-matched Swift models
