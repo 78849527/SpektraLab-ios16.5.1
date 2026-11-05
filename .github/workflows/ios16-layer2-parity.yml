@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   test-macos-shared-models:
-    runs-on: macos-latest
+    # Use standard Intel macOS runner while arm64 macos-latest capacity is degraded.
+    runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
