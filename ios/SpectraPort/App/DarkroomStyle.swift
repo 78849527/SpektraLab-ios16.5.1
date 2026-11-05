@@ -77,7 +77,16 @@ struct DarkroomChip: View {
 struct FilmStockCard: View {
     let name: String
     let selected: Bool
+    let kind: String
     let action: () -> Void
+
+    init(name: String, selected: Bool, kind: String = "NEGATIVE",
+         action: @escaping () -> Void) {
+        self.name = name
+        self.selected = selected
+        self.kind = kind
+        self.action = action
+    }
 
     private var brand: String {
         if name.lowercased().contains("fujifilm") { return "FUJIFILM" }
@@ -125,7 +134,7 @@ struct FilmStockCard: View {
                             .frame(width: 9, height: 3)
                     }
                     Spacer()
-                    Text("NEGATIVE")
+                    Text(kind)
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .opacity(0.7)
                 }
@@ -158,11 +167,42 @@ struct DarkroomControlRow: View {
     let suffix: String
     let disabled: Bool
 
-    private func adjust(_ amount: Double) {
-        let result = min(range.upperBound, max(range.lowerBound, value + amount))
-        // Snap to the parameter's actual step to avoid drift after repeated taps.
-        let steps = ((result - range.lowerBound) / step).rounded()
-        value = min(range.upperBound, max(range.lowerBound, range.lowerBound + steps * step))
+    private var maximumStepIndex: Int {
+        Int(((range.upperBound - range.lowerBound) / step).rounded())
+    }
+
+    private var currentStepIndex: Int {
+        let raw = Int(((value - range.lowerBound) / step).rounded())
+        return min(maximumStepIndex, max(0, raw))
+    }
+
+    /// Use integer step indices: e.g. print exposure 1.00 -> 0.95 -> 0.90,
+    /// and M/Y shift 0.00 -> -0.05. No accumulating FP rounding drift.
+    private func adjust(direction: Int) {
+        guard !disabled else { return }
+        let target = min(maximumStepIndex, max(0, currentStepIndex + direction))
+        value = min(range.upperBound, max(range.lowerBound,
+            range.lowerBound + Double(target) * step))
+    }
+
+    private func stepButton(_ name: String, direction: Int) -> some View {
+        Button {
+            adjust(direction: direction)
+        } label: {
+            Image(systemName: name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DarkroomStyle.primary)
+                .frame(width: 44, height: 44)
+                .background(DarkroomStyle.raised, in: RoundedRectangle(cornerRadius: 11))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled ||
+                  (direction < 0 ? currentStepIndex == 0 : currentStepIndex == maximumStepIndex))
+        .opacity(direction < 0 && currentStepIndex == 0 ? 0.35 :
+                 direction > 0 && currentStepIndex == maximumStepIndex ? 0.35 : 1.0)
+        .accessibilityLabel(label + (direction < 0 ? "减少" : "增加"))
+        .accessibilityValue(String(format: "%.2f", value))
     }
 
     var body: some View {
@@ -177,25 +217,13 @@ struct DarkroomControlRow: View {
                     .foregroundStyle(DarkroomStyle.accent)
                     .monospacedDigit()
             }
-            HStack(spacing: 10) {
-                Button { adjust(-step) } label: {
-                    Image(systemName: "minus")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 24, height: 28)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(label + "减少")
+            HStack(spacing: 9) {
+                stepButton("minus", direction: -1)
                 Slider(value: $value, in: range, step: step)
                     .tint(DarkroomStyle.accent)
-                Button { adjust(step) } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 24, height: 28)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(label + "增加")
+                    .accessibilityLabel(label)
+                stepButton("plus", direction: 1)
             }
-            .foregroundStyle(DarkroomStyle.secondary)
             .disabled(disabled)
         }
     }
