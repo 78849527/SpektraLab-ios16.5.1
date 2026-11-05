@@ -57,6 +57,40 @@ struct FilmSettings: Equatable, Codable {
     let printExposure: Double
     let magentaShift: Double
     let yellowShift: Double
+    let softness: Double
+
+    init(filmStock: String, printStock: String, exposureEV: Double,
+         grainAmount: Double, halationAmount: Double, printExposure: Double,
+         magentaShift: Double, yellowShift: Double, softness: Double = 0) {
+        self.filmStock = filmStock
+        self.printStock = printStock
+        self.exposureEV = exposureEV
+        self.grainAmount = grainAmount
+        self.halationAmount = halationAmount
+        self.printExposure = printExposure
+        self.magentaShift = magentaShift
+        self.yellowShift = yellowShift
+        self.softness = softness
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case filmStock, printStock, exposureEV, grainAmount, halationAmount,
+             printExposure, magentaShift, yellowShift, softness
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        filmStock = try values.decode(String.self, forKey: .filmStock)
+        printStock = try values.decode(String.self, forKey: .printStock)
+        exposureEV = try values.decode(Double.self, forKey: .exposureEV)
+        grainAmount = try values.decode(Double.self, forKey: .grainAmount)
+        halationAmount = try values.decode(Double.self, forKey: .halationAmount)
+        printExposure = try values.decode(Double.self, forKey: .printExposure)
+        magentaShift = try values.decode(Double.self, forKey: .magentaShift)
+        yellowShift = try values.decode(Double.self, forKey: .yellowShift)
+        // Old presets were written before the softness parameter existed.
+        softness = try values.decodeIfPresent(Double.self, forKey: .softness) ?? 0
+    }
 
     func deltaJSON(striped: Bool = false) throws -> String {
         // These exact field names and ranges come from engine/src/core/params.cpp.

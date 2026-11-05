@@ -49,8 +49,9 @@ final class PresetStore: ObservableObject {
         (0.05...20.0).contains(s.printExposure) &&
         (-1.0...1.0).contains(s.magentaShift) &&
         (-1.0...1.0).contains(s.yellowShift) &&
+        (0.0...1.0).contains(s.softness) &&
         [s.exposureEV, s.grainAmount, s.halationAmount, s.printExposure,
-         s.magentaShift, s.yellowShift].allSatisfy { $0.isFinite }
+         s.magentaShift, s.yellowShift, s.softness].allSatisfy { $0.isFinite }
     }
 
     /// Re-saving under the same name updates the look.
