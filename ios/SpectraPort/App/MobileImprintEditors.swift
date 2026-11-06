@@ -93,16 +93,16 @@ struct MobileDateBackEditor: View {
                 }
                 DarkroomControlRow(label: "日期大小", value: $settings.size,
                                    range: 0.4...3, step: 0.1,
-                                   suffix: "×", disabled: !settings.enabled)
+                                   suffix: "×", disabled: !settings.enabled, resetValue: 1.0)
                 DarkroomControlRow(label: "日期亮度", value: $settings.brightnessEV,
                                    range: -2...8, step: 0.5,
-                                   suffix: " EV", disabled: !settings.enabled)
+                                   suffix: " EV", disabled: !settings.enabled, resetValue: 3.5)
                 DarkroomControlRow(label: "横向边距", value: $settings.insetXMM,
                                    range: 0...30, step: 0.5,
-                                   suffix: "mm", disabled: !settings.enabled)
+                                   suffix: "mm", disabled: !settings.enabled, resetValue: 3.0)
                 DarkroomControlRow(label: "纵向边距", value: $settings.insetYMM,
                                    range: 0...30, step: 0.5,
-                                   suffix: "mm", disabled: !settings.enabled)
+                                   suffix: "mm", disabled: !settings.enabled, resetValue: 2.4)
                 Text("日期由相机元数据或手动输入确定；非显影阶段的日期合成不会修改胶片光谱计算。")
                     .font(.system(size: 10))
                     .foregroundStyle(DarkroomStyle.secondary)
@@ -229,16 +229,16 @@ struct MobileSignatureEditor: View {
                 }
                 DarkroomControlRow(label: "签名大小", value: $settings.scale,
                                    range: 0.35...3, step: 0.05, suffix: "×",
-                                   disabled: !settings.enabled)
+                                   disabled: !settings.enabled, resetValue: 1.0)
                 DarkroomControlRow(label: "不透明度", value: $settings.opacity,
                                    range: 0.05...1, step: 0.05, suffix: "",
-                                   disabled: !settings.enabled)
+                                   disabled: !settings.enabled, resetValue: 0.80)
                 DarkroomControlRow(label: "水平边距", value: $settings.offsetX,
                                    range: 0...0.25, step: 0.005, suffix: "",
-                                   disabled: !settings.enabled)
+                                   disabled: !settings.enabled, resetValue: 0.035)
                 DarkroomControlRow(label: "垂直边距", value: $settings.offsetY,
                                    range: 0...0.25, step: 0.005, suffix: "",
-                                   disabled: !settings.enabled)
+                                   disabled: !settings.enabled, resetValue: 0.045)
                 Text("绘制的笔画按相对坐标保存；JPEG、PNG 和普通预览使用同一组签名。")
                     .font(.system(size: 10))
                     .foregroundStyle(DarkroomStyle.secondary)
