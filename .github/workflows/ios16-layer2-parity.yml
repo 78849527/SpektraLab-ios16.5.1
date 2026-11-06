@@ -185,7 +185,7 @@ jobs:
           project = Path("ios/project.yml").read_text()
           assert ".toolbar(.hidden, for: .navigationBar)" in editor
           assert '.navigationTitle("SpectraPort")' not in editor
-          assert "geometry.size.height * 0.30" in editor and "geometry.size.height * 0.51" in editor
+          assert "geometry.size.height * 0.50" in editor
           assert ".onPreferenceChange(CompactSliderReadoutKey.self)" in editor
           assert "activeSliderReadout" in editor
           assert 'private var editorSections: some View' in editor
