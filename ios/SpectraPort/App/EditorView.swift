@@ -1880,7 +1880,7 @@ struct EditorView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(DarkroomStyle.secondary)
                 } else {
-                    Text("iOS 16 的系统 RAW 解码不支持此 RAF；已切换应用内 LibRaw，沿用相机白平衡。")
+                    Text("系统 RAW 解码不支持此文件；已切换应用内 LibRaw，沿用相机白平衡。")
                         .font(.system(size: 10))
                         .foregroundStyle(DarkroomStyle.secondary)
                 }
