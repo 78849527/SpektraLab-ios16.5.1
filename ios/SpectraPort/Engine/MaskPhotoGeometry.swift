@@ -17,6 +17,19 @@ enum MaskPhotoGeometry {
                       width: width, height: height)
     }
 
+    /// Project the non-destructive crop rectangle into the same fitted photo
+    /// viewport used by mask handles and the crop gesture touch mapping.
+    /// The caller provides a bounded, top-left normalized crop rectangle.
+    static func cropRect(_ normalizedCrop: CGRect, in fittedRect: CGRect) -> CGRect {
+        guard fittedRect.width > 0, fittedRect.height > 0 else { return .zero }
+        return CGRect(
+            x: fittedRect.minX + normalizedCrop.minX * fittedRect.width,
+            y: fittedRect.minY + normalizedCrop.minY * fittedRect.height,
+            width: normalizedCrop.width * fittedRect.width,
+            height: normalizedCrop.height * fittedRect.height
+        )
+    }
+
     static func point(_ normalized: CGPoint, in rect: CGRect) -> CGPoint {
         CGPoint(x: rect.minX + normalized.x * rect.width,
                 y: rect.minY + normalized.y * rect.height)
