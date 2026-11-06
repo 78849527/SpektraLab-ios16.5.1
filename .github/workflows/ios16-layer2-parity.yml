@@ -248,7 +248,7 @@ jobs:
           assert "unframedProcessed" in editor
           assert "cropEditingImage" in editor
           assert "PhotoGeometryPreview.render(" in editor
-          assert "geometry: geometry, limit:" in editor
+          assert "geometry: geometry, rawOptions: rawAtExport" in editor
           assert "geometry.apply(to: CIImage(cgImage: picture))" in output
           assert output.count("geometry.apply(to: CIImage(cgImage: picture))") == 2
           assert "format: format, geometry: geometry" in renderer
