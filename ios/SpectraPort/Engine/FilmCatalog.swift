@@ -168,7 +168,7 @@ struct FilmSettings: Equatable, Codable {
             "date_imprint_style": filmEdge.dateBack.face == .lcd ? "lcd" :
                 (filmEdge.dateBack.face == .dots ? "dots" : "data"),
             "date_imprint_placement": filmEdge.dateBack.placement == .rebate && filmEdge.enabled ? "rebate" : "frame",
-            "date_imprint_corner": filmEdge.dateBack.corner.rawValue.lowercased(),
+            "date_imprint_corner": filmEdge.dateBack.corner.engineValue,
             "date_imprint_inset_x": filmEdge.dateBack.insetXMM,
             "date_imprint_inset_y": filmEdge.dateBack.insetYMM,
             "date_imprint_size": filmEdge.dateBack.size,
