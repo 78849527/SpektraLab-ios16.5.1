@@ -98,10 +98,12 @@ final class SpectralRenderer {
     }
 
     func render(data: Data, photoID: UUID, settings: FilmSettings,
+                rawOptions: RAWDecodeOptions?,
                 completion: @escaping (Result<RenderedPhoto, Error>) -> Void) {
         queue.async {
             let result = Result {
-                try self.renderSynchronously(data, photoID: photoID, settings: settings)
+                try self.renderSynchronously(data, photoID: photoID, settings: settings,
+                                             rawOptions: rawOptions)
             }
             DispatchQueue.main.async { completion(result) }
         }
@@ -114,6 +116,7 @@ final class SpectralRenderer {
         settings: FilmSettings,
         format: PreviewExporter.Format,
         geometry: PhotoGeometry,
+        rawOptions: RAWDecodeOptions?,
         limit: ExportLimit,
         progress: @escaping (String) -> Void,
         completion: @escaping (Result<HighResExportResult, Error>) -> Void
@@ -124,7 +127,8 @@ final class SpectralRenderer {
             }
             let outcome = Result {
                 try self.exportSynchronously(data, settings: settings, format: format,
-                                             geometry: geometry, limit: limit, report: report)
+                                             geometry: geometry, rawOptions: rawOptions,
+                                             limit: limit, report: report)
             }
             DispatchQueue.main.async { completion(outcome) }
         }
@@ -156,6 +160,7 @@ final class SpectralRenderer {
         settings: FilmSettings,
         format: PreviewExporter.Format,
         geometry: PhotoGeometry,
+        rawOptions: RAWDecodeOptions?,
         limit: ExportLimit,
         report: (String) -> Void
     ) throws -> HighResExportResult {
@@ -176,7 +181,8 @@ final class SpectralRenderer {
 
         report("检查尺寸并解码原始照片…")
         var frame = try FullSizeExporter.decode(
-            data, limit: limit, softness: settings.softness
+            data, limit: limit, softness: settings.softness,
+            rawOptions: rawOptions
         )
         report("初始化高清光谱会话…")
         let native = try ensureEngine()
@@ -265,7 +271,8 @@ final class SpectralRenderer {
     }
 
     private func openPhoto(_ data: Data, photoID: UUID,
-                           settings: FilmSettings, engine: OpaquePointer) throws {
+                           settings: FilmSettings, rawOptions: RAWDecodeOptions?,
+                           engine: OpaquePointer) throws {
         // The previous session's native buffers must be freed before opening
         // a differently sized photo. Engine kernels/tables survive the switch.
         if let session { spk_session_release(session) }
@@ -275,40 +282,61 @@ final class SpectralRenderer {
         cachedPrint = nil
         appliedSettings = nil
 
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-            throw PortError.message("无法解码图片")
-        }
-        // Keep the verified A15 preview memory budget, max edge 1440 px.
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 1440
-        ]
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            throw PortError.message("无法生成预览")
-        }
-        guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
-            throw PortError.message("系统缺少 ProPhoto RGB 色彩空间")
-        }
+        let width: Int
+        let height: Int
+        let thumbnail: CGImage
+        var floats: [Float]
 
-        let width = thumbnail.width
-        let height = thumbnail.height
-        let input = InputSoftening.apply(
-            CIImage(cgImage: thumbnail), amount: settings.softness
-        )
-        var floats = [Float](repeating: 0, count: width * height * 4)
-        try floats.withUnsafeMutableBytes { bytes in
-            guard let base = bytes.baseAddress else {
-                throw PortError.message("图像内存分配失败")
-            }
-            context.render(
-                input,
-                toBitmap: base,
-                rowBytes: width * 4 * MemoryLayout<Float>.size,
-                bounds: CGRect(x: 0, y: 0, width: width, height: height),
-                format: .RGBAf,
-                colorSpace: proPhoto
+        if let rawOptions {
+            // Sensor RAW must use the same Apple demosaic + WB as export.
+            // The native spectral engine receives ProPhoto Float32 pixels;
+            // embedded JPEG thumbnails never enter the calculation.
+            let developed = try RawImageDeveloper.develop(
+                data, options: rawOptions, maxPixels: 1440 * 1440,
+                maxEdge: 1440, softness: settings.softness,
+                context: context, preview: true
             )
+            guard let rendered = developed.preview else {
+                throw RAWDevelopmentError.failed
+            }
+            width = developed.width
+            height = developed.height
+            thumbnail = rendered
+            floats = developed.pixels
+        } else {
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+                throw PortError.message("无法解码图片")
+            }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1440
+            ]
+            guard let decoded = CGImageSourceCreateThumbnailAtIndex(
+                source, 0, options as CFDictionary
+            ) else {
+                throw PortError.message("无法生成预览")
+            }
+            guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
+                throw PortError.message("系统缺少 ProPhoto RGB 色彩空间")
+            }
+            thumbnail = decoded
+            width = decoded.width
+            height = decoded.height
+            let input = InputSoftening.apply(
+                CIImage(cgImage: decoded), amount: settings.softness)
+            floats = [Float](repeating: 0, count: width * height * 4)
+            try floats.withUnsafeMutableBytes { bytes in
+                guard let base = bytes.baseAddress else {
+                    throw PortError.message("图像内存分配失败")
+                }
+                context.render(
+                    input, toBitmap: base,
+                    rowBytes: width * 4 * MemoryLayout<Float>.size,
+                    bounds: CGRect(x: 0, y: 0, width: width, height: height),
+                    format: .RGBAf, colorSpace: proPhoto
+                )
+            }
         }
 
         var openReply: UnsafeMutablePointer<CChar>?
@@ -378,7 +406,8 @@ final class SpectralRenderer {
     }
 
     private func renderSynchronously(_ data: Data, photoID: UUID,
-                                     settings: FilmSettings) throws -> RenderedPhoto {
+                                     settings: FilmSettings,
+                                     rawOptions: RAWDecodeOptions?) throws -> RenderedPhoto {
         // Curves, grading and masks are *after* the chemical/physical print.
         // Avoid recomputing the 81-wavelength negative/print when only Layer2
         // changed; preserve the exact RGBA16 print as a memory-bounded cache.
@@ -401,7 +430,8 @@ final class SpectralRenderer {
         let engine = try ensureEngine()
         if cachedPhotoID != photoID || session == nil ||
             appliedSettings?.softness != settings.softness {
-            try openPhoto(data, photoID: photoID, settings: settings, engine: engine)
+            try openPhoto(data, photoID: photoID, settings: settings,
+                          rawOptions: rawOptions, engine: engine)
         } else if let previous = appliedSettings, previous != settings {
             // A print-only change reuses the existing film negative.
             // A film-side change automatically invalidates it upstream.
