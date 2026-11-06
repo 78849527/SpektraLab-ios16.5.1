@@ -272,7 +272,7 @@ jobs:
             ios/tests/crop-mask-projection/main.swift \
             -framework CoreGraphics -framework CoreImage \
             -o /tmp/crop-mask-projection
-          /tmp/crop-mask-projection | grep -q CROP_MASK_PROJECTION_BUILD33_PASS
+          /tmp/crop-mask-projection | grep -q CROP_MASK_PROJECTION_BUILD32_PASS
       - name: Verify cropped preview, mask projection and luma sample linkage
         run: |
           python3 - <<'PY'
