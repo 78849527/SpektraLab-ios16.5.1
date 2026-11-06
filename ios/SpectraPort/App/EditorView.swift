@@ -308,7 +308,11 @@ final class EditorModel: ObservableObject {
                 }
             case let .failure(error):
                 if upToDate {
-                    self.status = "光谱渲染失败：\(error.localizedDescription)"
+                    let message = error.localizedDescription
+                    self.status = "光谱渲染失败：\(message)"
+                    if capturedRAW != nil {
+                        self.rawImportError = "RAW 显影失败：" + message
+                    }
                     self.isDirty = true
                     // Do not retry an invalid stock/parameter forever.
                 }
