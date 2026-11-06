@@ -84,7 +84,18 @@ jobs:
           assert "LocalMaskCanvas(" in editor
           assert "} else {\n                        // Keep the existing loupe" in editor
           assert "maskEditing: false" in editor
-          assert "if !editingMaskOnPhoto { fitWholePhoto() }" in editor
+          # A pixel-only render must NOT rebuild the loupe and discard zoom.
+          preview_change = editor.split(
+              '.onChange(of: model.previewSequence) { _ in', 1)[1].split(
+              '.onChange(of: model.photoGeometry)', 1)[0]
+          assert "fitWholePhoto()" not in preview_change
+          assert "clearInlineHighResolution()" in preview_change
+          assert ".onChange(of: model.photoSelectionVersion)" in editor
+          geometry_change = editor.split(
+              '.onChange(of: model.photoGeometry) { _ in', 1)[1].split(
+              '.onChange(of: selectedTab)', 1)[0]
+          assert "if !editingCropOnPhoto && !editingMaskOnPhoto" in geometry_change
+          assert "fitWholePhoto()" in geometry_change
           assert "InlineMaskOverlay(" not in editor
           assert ".id(\"source-" in editor
           assert canvas.count("MaskPhotoGeometry.fittedRect(") == 1
@@ -257,6 +268,10 @@ jobs:
           assert "func oriented(_ original: CIImage)" in helper
           assert "private func cornerGesture(" in canvas
           assert "private func moveGesture(" in canvas
+          assert "MaskPhotoGeometry.cropRect(r, in: photo)" in canvas
+          assert "MaskPhotoGeometry.normalized(change.location, in: photo)" in canvas
+          fitted = Path("ios/SpectraPort/Engine/MaskPhotoGeometry.swift").read_text()
+          assert "static func cropRect(" in fitted
           assert "LocalMaskCanvas(" in editor
           assert 'CURRENT_PROJECT_VERSION: "36"' in Path("ios/project.yml").read_text()
           print("PHOTO_GEOMETRY_EXPORT_CONTRACT_PASS")
