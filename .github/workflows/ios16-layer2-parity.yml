@@ -473,6 +473,22 @@ jobs:
           assert 'MobileFilmGate.allCases' in Path(
               "ios/SpectraPort/App/MobileFilmEdgeEditor.swift").read_text()
           assert 'CURRENT_PROJECT_VERSION: "36"' in Path("ios/project.yml").read_text()
+          # A 240ms spectral render must not discard output-only edits.
+          imprint_setter = editor.split('func setFilmEdge(', 1)[1].split(
+              'func updateDateBack(', 1)[0]
+          edge_choices = editor.split('private var filmEdgeChoiceSection:', 1)[1].split(
+              'private var filmEdgeWorkflowSummary:', 1)[0]
+          assert 'guard !isBusy else { return }' in imprint_setter
+          assert '!isRendering' not in imprint_setter
+          assert 'guard !model.isBusy else { return }' in edge_choices
+          assert '.disabled(model.isBusy)' in edge_choices
+          assert '.disabled(model.isBusy || model.isRendering)' not in edge_choices
+          # Small cards must have one readable name, not a 6.5pt second copy.
+          stock_card = cards.split('struct WorkflowStockCard:', 1)[1].split(
+              'enum WorkflowFilmEdgeChoice:', 1)[0]
+          assert stock_card.count('Text(shortName)') == 1
+          assert 'size: 6.5' not in stock_card
+          assert 'width: 96, height: 74' in stock_card
           print("COMPACT_IMPRINT_BUILD36_PASS")
           PY
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
