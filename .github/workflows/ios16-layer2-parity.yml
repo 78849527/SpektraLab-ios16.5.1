@@ -378,7 +378,7 @@ jobs:
           assert "UIGraphicsImageRenderer(" in renderer
           assert "CGImageDestinationFinalize(destination)" in renderer
           assert "format.scale = 1" in renderer
-          assert "filed" in view and "片号" in view
+          assert "MobileFilmEdgeView.allCases" in view and "片号" in view
           assert "LocalMaskCanvas(" in editor
           assert 'CURRENT_PROJECT_VERSION: "34"' in project
           print("FILM_EDGE_PIPELINE_BUILD34_PASS")
