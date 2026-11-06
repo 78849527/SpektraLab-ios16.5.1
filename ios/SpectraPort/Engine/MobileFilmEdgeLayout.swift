@@ -49,6 +49,18 @@ enum MobileFilmEdgeFormat: String, CaseIterable, Identifiable, Codable {
     var filmWidthMM: CGFloat { perforated ? 35 : 61 }
 }
 
+/// Mac RFC-032 gate families plus a mobile scan-carrier burnished edge.
+enum MobileFilmGate: String, CaseIterable, Identifiable, Codable {
+    case auto = "自动"
+    case square = "直角"
+    case rounded = "圆角"
+    case eared = "耳形"
+    case shouldered = "肩形"
+    case kicked = "缺口"
+    case burnished = "打磨片夹"
+    var id: String { rawValue }
+}
+
 enum MobileFilmEdgeView: String, CaseIterable, Identifiable, Codable {
     case strip = "胶片条"
     case filed = "归档"
@@ -64,7 +76,14 @@ struct MobileFilmEdgeSettings: Equatable, Codable {
     var enabled = false
     var format = MobileFilmEdgeFormat.f135
     var view = MobileFilmEdgeView.strip
+    var gate = MobileFilmGate.auto
     var holes = MobileFilmEdgeHoles.white
+    var dateBack = MobileDateBackSettings()
+    var signature = MobileSignatureSettings()
+
+    var needsComposite: Bool {
+        enabled || dateBack.enabled || (signature.enabled && signature.hasInk)
+    }
     var frameNumber = 1
     var fog = 0.4
     var leaks = 0.0
@@ -78,6 +97,8 @@ struct MobileFilmEdgeSettings: Equatable, Codable {
         a.fog = min(4, max(0, a.fog))
         a.leaks = min(4, max(0, a.leaks))
         a.edgeText = String(a.edgeText.prefix(32))
+        a.dateBack = a.dateBack.normalized()
+        a.signature = a.signature.normalized()
         return a
     }
 }
@@ -95,6 +116,18 @@ struct MobileFilmEdgeLayout {
     ) -> MobileFilmEdgeLayout? {
         guard image.width > 0, image.height > 0, pixelLimit > 0,
               image.width.isFinite, image.height.isFinite else { return nil }
+        if !settings.enabled {
+            let shrink = min(1, sqrt(Double(pixelLimit) /
+                                 Double(image.width * image.height)))
+            let canvas = CGSize(
+                width: max(1, floor(image.width * CGFloat(shrink))),
+                height: max(1, floor(image.height * CGFloat(shrink))))
+            let full = CGRect(origin: .zero, size: canvas)
+            return MobileFilmEdgeLayout(canvas: canvas,
+                                        filmRect: full, gateRect: full,
+                                        holes: [], edgeLabelRect: .zero,
+                                        isPortrait: image.height > image.width)
+        }
         let gate = settings.format.gateMM
         let landscape = image.width >= image.height
         let long = max(gate.width, gate.height)

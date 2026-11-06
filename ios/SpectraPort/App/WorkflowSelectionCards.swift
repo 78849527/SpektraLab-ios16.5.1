@@ -121,10 +121,11 @@ enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
         case .more: "ellipsis"
         }
     }
-    var supported: Bool { self != .burnished }
+    var supported: Bool { true }
 
     static func current(_ value: MobileFilmEdgeSettings) -> WorkflowFilmEdgeChoice {
         guard value.enabled else { return .none }
+        if value.gate == .burnished { return .burnished }
         if value.view == .filed { return .archived }
         switch value.format {
         case .f135: return .f135
@@ -140,11 +141,15 @@ enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
         var next = settings
         next.enabled = self != .none
         next.view = .strip
+        next.gate = .auto
         switch self {
         case .none: break
         case .f135: next.format = .f135
         case .f120: next.format = .f645
-        case .burnished: break
+        case .burnished:
+            next.format = .f135
+            next.view = .filed
+            next.gate = .burnished
         case .archived:
             next.format = .f135
             next.view = .filed
