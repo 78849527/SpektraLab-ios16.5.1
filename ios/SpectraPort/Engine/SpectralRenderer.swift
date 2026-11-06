@@ -201,6 +201,7 @@ final class SpectralRenderer {
         let nativeEdge = filmEdge.needsComposite
         let delta = try settings.deltaJSON(striped: !nativeEdge,
                                            filmEdge: filmEdge, geometry: geometry,
+                                           inputSize: CGSize(width: frame.width, height: frame.height),
                                            filmName: FilmCatalog.filmName(settings.filmStock))
         let opened: OpaquePointer? = frame.pixels.withUnsafeBufferPointer { buffer in
             var input = spk_image(
@@ -364,6 +365,7 @@ final class SpectralRenderer {
         defer { if let openReply { spk_string_free(openReply) } }
         let delta = try settings.deltaJSON(
             striped: false, filmEdge: filmEdge, geometry: geometry,
+            inputSize: CGSize(width: width, height: height),
             filmName: FilmCatalog.filmName(settings.filmStock))
         let opened: OpaquePointer? = floats.withUnsafeBufferPointer { buffer in
             var frame = spk_image(
