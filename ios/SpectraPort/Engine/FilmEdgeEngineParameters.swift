@@ -64,7 +64,7 @@ extension FilmSettings {
 
         let date = filmEdge.dateBack
         values["date_imprint_active"] = date.enabled
-        values["date_imprint_text"] = date.face == .data ? "" : date.printedText
+        values["date_imprint_text"] = date.printedText
         values["date_imprint_data_text"] = date.withData ? date.dataText : ""
         values["date_imprint_style"] = date.face == .lcd ? "lcd" :
             (date.face == .dots ? "dots" : "data")
