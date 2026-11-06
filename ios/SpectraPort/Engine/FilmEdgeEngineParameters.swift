@@ -7,12 +7,13 @@ import Foundation
 extension FilmSettings {
     func deltaJSON(
         striped: Bool,
+        inputCCTFDecoding: Bool = true,
         filmEdge: MobileFilmEdgeSettings,
         geometry: PhotoGeometry,
         inputSize: CGSize,
         filmName: String
     ) throws -> String {
-        let base = try deltaJSON(striped: false)
+        let base = try deltaJSON(striped: false, inputCCTFDecoding: inputCCTFDecoding)
         guard let data = base.data(using: .utf8),
               var values = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PortError.message("无法读取原版胶片参数")
