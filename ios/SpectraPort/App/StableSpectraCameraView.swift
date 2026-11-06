@@ -29,6 +29,9 @@ struct StableSpectraCameraView: View {
     @State private var frameGuide: CameraFrameGuide = .fourThree
     @State private var focusMarker: CGPoint?
     @State private var focusToken = UUID()
+    @State private var shutterTimer = 0
+    @State private var countdownValue: Int?
+    @State private var countdownTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { geometry in
@@ -53,6 +56,14 @@ struct StableSpectraCameraView: View {
                         .position(focusMarker)
                         .allowsHitTesting(false)
                 }
+                if let countdownValue {
+                    Text("\(countdownValue)")
+                        .font(.system(size: 88, weight: .light, design: .rounded))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.6), radius: 12)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
                 if camera.permissionDenied {
                     permissionPrompt
                 } else if !camera.isConfigured {
@@ -71,7 +82,7 @@ struct StableSpectraCameraView: View {
             .ignoresSafeArea()
         }
         .onAppear { camera.start() }
-        .onDisappear { camera.stop() }
+        .onDisappear { countdownTask?.cancel(); camera.stop() }
         .alert(
             "相机提示",
             isPresented: Binding(
@@ -86,16 +97,17 @@ struct StableSpectraCameraView: View {
     }
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 12) {
             Button(action: onCancel) {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 42, height: 42)
                     .background(.black.opacity(0.32), in: Circle())
             }
             .accessibilityLabel("关闭相机")
-            Spacer()
+
+            Spacer(minLength: 4)
             VStack(spacing: 2) {
                 Text("SPEKTRA")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -105,21 +117,44 @@ struct StableSpectraCameraView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.7))
             }
-            Spacer()
-            Button { camera.toggleFlash() } label: {
+            Spacer(minLength: 4)
+
+            Button {
+                camera.toggleWhiteBalanceLock()
+            } label: {
+                Image(systemName: camera.whiteBalanceLocked ? "sun.max.fill" : "sun.max")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(camera.whiteBalanceLocked ? DarkroomStyle.accent : .white)
+                    .frame(width: 36, height: 42)
+            }
+            .disabled(!camera.canLockWhiteBalance)
+            .accessibilityLabel(camera.whiteBalanceLocked ? "白平衡自动" : "锁定白平衡")
+
+            Button {
+                camera.toggleFlash()
+            } label: {
                 Image(systemName: camera.flashEnabled ? "bolt.fill" : "bolt.slash")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(camera.flashEnabled ? DarkroomStyle.accent : .white)
-                    .frame(width: 44, height: 44)
-                    .background(.black.opacity(0.32), in: Circle())
+                    .frame(width: 36, height: 42)
             }
             .disabled(!camera.hasFlash)
             .accessibilityLabel(camera.flashEnabled ? "关闭闪光灯" : "开启闪光灯")
+
+            Button {
+                camera.switchCamera()
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 42)
+            }
+            .accessibilityLabel(camera.cameraPosition == .back ? "切换前置相机" : "切换后置相机")
         }
     }
 
     private var captureControls: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Text("EV")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -133,10 +168,10 @@ struct StableSpectraCameraView: View {
                     .frame(width: 42, alignment: .trailing)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
             .background(.black.opacity(0.42), in: Capsule())
 
-            HStack(spacing: 18) {
+            HStack(spacing: 16) {
                 ForEach(CameraFrameGuide.allCases) { option in
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) { frameGuide = option }
@@ -144,7 +179,7 @@ struct StableSpectraCameraView: View {
                         Text(option.rawValue)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundStyle(frameGuide == option ? .black : .white)
-                            .frame(width: 52, height: 32)
+                            .frame(width: 50, height: 30)
                             .background(
                                 frameGuide == option ? DarkroomStyle.accent : .clear,
                                 in: Capsule()
@@ -156,19 +191,27 @@ struct StableSpectraCameraView: View {
             .padding(4)
             .background(.black.opacity(0.42), in: Capsule())
 
-            Button {
-                camera.capture { result in
-                    switch result {
-                    case let .success(data):
-                        onCapture(CapturedCameraPhoto(
-                            processedData: data,
-                            modeLabel: "JPEG · Spektra 暗房相机"
-                        ))
-                    case let .failure(error):
-                        camera.showError(error.localizedDescription)
+            HStack(spacing: 16) {
+                ForEach([0, 3, 10], id: \.self) { seconds in
+                    Button {
+                        shutterTimer = seconds
+                    } label: {
+                        Text(seconds == 0 ? "自拍关" : "\(seconds)秒")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(shutterTimer == seconds ? .black : .white)
+                            .frame(width: 58, height: 28)
+                            .background(
+                                shutterTimer == seconds ? DarkroomStyle.accent : .clear,
+                                in: Capsule()
+                            )
                     }
+                    .buttonStyle(.plain)
                 }
-            } label: {
+            }
+            .padding(4)
+            .background(.black.opacity(0.42), in: Capsule())
+
+            Button(action: pressShutter) {
                 ZStack {
                     Circle().fill(.white.opacity(camera.isCapturing ? 0.65 : 1))
                         .frame(width: 72, height: 72)
@@ -177,10 +220,10 @@ struct StableSpectraCameraView: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(!camera.isConfigured || camera.isCapturing)
+            .disabled(!camera.isConfigured || camera.isCapturing || countdownTask != nil)
             .accessibilityLabel("拍摄")
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity)
         .background(
             LinearGradient(
@@ -189,6 +232,43 @@ struct StableSpectraCameraView: View {
                 endPoint: .bottom
             )
         )
+    }
+
+    @MainActor
+    private func pressShutter() {
+        guard shutterTimer > 0 else {
+            capturePhoto()
+            return
+        }
+        guard countdownTask == nil else { return }
+        countdownTask = Task { @MainActor in
+            for value in stride(from: shutterTimer, through: 1, by: -1) {
+                countdownValue = value
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled {
+                    countdownValue = nil
+                    countdownTask = nil
+                    return
+                }
+            }
+            countdownValue = nil
+            countdownTask = nil
+            capturePhoto()
+        }
+    }
+
+    private func capturePhoto() {
+        camera.capture { result in
+            switch result {
+            case let .success(data):
+                onCapture(CapturedCameraPhoto(
+                    processedData: data,
+                    modeLabel: "JPEG · Spektra 暗房相机"
+                ))
+            case let .failure(error):
+                camera.showError(error.localizedDescription)
+            }
+        }
     }
 
     private var startupPrompt: some View {
@@ -328,6 +408,9 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
     @Published private(set) var isConfigured = false
     @Published private(set) var isCapturing = false
     @Published private(set) var hasFlash = false
+    @Published private(set) var canLockWhiteBalance = false
+    @Published private(set) var whiteBalanceLocked = false
+    @Published private(set) var cameraPosition: AVCaptureDevice.Position = .back
     @Published var flashEnabled = false
     @Published var exposureBias = 0.0
     @Published private(set) var permissionDenied = false
@@ -337,6 +420,8 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
     private let sessionQueue = DispatchQueue(label: "com.twogou.spectraport.camera-session")
     private let photoOutput = AVCapturePhotoOutput()
     private var activeDevice: AVCaptureDevice?
+    private var activeInput: AVCaptureDeviceInput?
+    private var whiteBalanceLockState = false
     private var configured = false
     private var captureCompletion: ((Result<Data, Error>) -> Void)?
 
@@ -370,6 +455,77 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
     func toggleFlash() {
         guard hasFlash else { return }
         flashEnabled.toggle()
+    }
+
+    func switchCamera() {
+        sessionQueue.async { [weak self] in
+            guard let self, let oldInput = self.activeInput, let current = self.activeDevice else {
+                return
+            }
+            let nextPosition: AVCaptureDevice.Position =
+                current.position == .back ? .front : .back
+            guard let nextDevice = AVCaptureDevice.default(
+                .builtInWideAngleCamera, for: .video, position: nextPosition
+            ), let nextInput = try? AVCaptureDeviceInput(device: nextDevice) else {
+                DispatchQueue.main.async {
+                    self.errorMessage = "这台设备没有可用的\(nextPosition == .front ? "前置" : "后置")相机"
+                }
+                return
+            }
+
+            self.session.beginConfiguration()
+            self.session.removeInput(oldInput)
+            guard self.session.canAddInput(nextInput) else {
+                self.session.addInput(oldInput)
+                self.session.commitConfiguration()
+                DispatchQueue.main.async {
+                    self.errorMessage = "无法切换相机，请重试"
+                }
+                return
+            }
+            self.session.addInput(nextInput)
+            self.activeInput = nextInput
+            self.activeDevice = nextDevice
+            self.session.commitConfiguration()
+            self.whiteBalanceLockState = false
+            DispatchQueue.main.async {
+                self.cameraPosition = nextPosition
+                self.hasFlash = nextDevice.hasFlash
+                self.flashEnabled = false
+                self.canLockWhiteBalance = nextDevice.isWhiteBalanceModeSupported(.locked)
+                self.whiteBalanceLocked = false
+                self.exposureBias = 0
+            }
+        }
+    }
+
+    func toggleWhiteBalanceLock() {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.activeDevice,
+                  device.isWhiteBalanceModeSupported(.locked) else { return }
+            do {
+                try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                if self.whiteBalanceLockState {
+                    if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                        device.whiteBalanceMode = .continuousAutoWhiteBalance
+                    }
+                    self.whiteBalanceLockState = false
+                } else {
+                    device.setWhiteBalanceModeLocked(
+                        with: device.deviceWhiteBalanceGains,
+                        completionHandler: nil
+                    )
+                    self.whiteBalanceLockState = true
+                }
+                let locked = self.whiteBalanceLockState
+                DispatchQueue.main.async { self.whiteBalanceLocked = locked }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "无法切换白平衡：" + error.localizedDescription
+                }
+            }
+        }
     }
 
     func focus(at point: CGPoint) {
@@ -416,6 +572,7 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
         isCapturing = true
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            self.captureCompletion = completion
             guard let device = self.activeDevice, self.session.isRunning else {
                 self.finishCapture(.failure(PortError.message("相机尚未准备好，请稍后重试")))
                 return
@@ -426,7 +583,6 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
             }
-            self.captureCompletion = completion
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
@@ -459,11 +615,14 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                     self.session.addOutput(self.photoOutput)
                     self.photoOutput.isHighResolutionCaptureEnabled = true
                     self.activeDevice = device
+                    self.activeInput = input
                     self.session.commitConfiguration()
                     configurationStarted = false
                     self.configured = true
                     DispatchQueue.main.async {
                         self.hasFlash = device.hasFlash
+                        self.canLockWhiteBalance = device.isWhiteBalanceModeSupported(.locked)
+                        self.cameraPosition = .back
                         self.isConfigured = true
                         self.exposureBias = 0
                     }
