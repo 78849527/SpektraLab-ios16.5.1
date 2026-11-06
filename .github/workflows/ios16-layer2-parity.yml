@@ -141,7 +141,7 @@ jobs:
           assert "if editingMaskOnPhoto {" in editor
           assert "LocalMaskCanvas(" in editor
           assert "showingQuickHelp" in editor
-          assert 'CURRENT_PROJECT_VERSION: "33"' in project
+          assert 'CURRENT_PROJECT_VERSION: "34"' in project
           assert "url = try FullSizeExporter.write(graded, format: format, geometry: geometry)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
           print("COMPACT_UI_BUILD33_PASS")
           PY
@@ -172,7 +172,7 @@ jobs:
           assert 'Label("启动设置", systemImage: "gearshape")' in editor
           assert "LocalMaskCanvas(" in editor
           assert "MaskLuminanceSampling.sample(" in Path("ios/SpectraPort/App/InlineMaskOverlay.swift").read_text()
-          assert 'CURRENT_PROJECT_VERSION: "33"' in project
+          assert 'CURRENT_PROJECT_VERSION: "34"' in project
           print("NINE_ACTION_COMPACT_NAV_BUILD33_PASS")
           PY
       - name: Verify hidden navigation chrome and fine slider touch contract
@@ -201,7 +201,7 @@ jobs:
           assert "onTrackingChange(false)" in style
           assert "TextField(\"数值\", text: $precisionText)" in style
           assert 'VStack(spacing: 0)' in local
-          assert 'CURRENT_PROJECT_VERSION: "33"' in project
+          assert 'CURRENT_PROJECT_VERSION: "34"' in project
           assert "LocalMaskCanvas(" in editor
           print("FINE_SLIDER_HIDDEN_NAV_BUILD33_PASS")
           PY
@@ -258,7 +258,7 @@ jobs:
           assert "private func cornerGesture(" in canvas
           assert "private func moveGesture(" in canvas
           assert "LocalMaskCanvas(" in editor
-          assert 'CURRENT_PROJECT_VERSION: "33"' in Path("ios/project.yml").read_text()
+          assert 'CURRENT_PROJECT_VERSION: "34"' in Path("ios/project.yml").read_text()
           print("PHOTO_GEOMETRY_EXPORT_CONTRACT_PASS")
           PY
       - name: Verify bidirectional crop-aware local mask coordinates
@@ -295,7 +295,7 @@ jobs:
           assert "MaskLuminanceSampling.sample(cg, at: uv)" in overlay
           assert "func toSource(_ point: CGPoint, clamp: Bool = true)" in coords
           assert "func radialSourceBoundary(" in coords
-          assert 'CURRENT_PROJECT_VERSION: "33"' in project
+          assert 'CURRENT_PROJECT_VERSION: "34"' in project
           print("CROP_MASK_UI_BUILD33_PASS")
           PY
       - name: Compile and validate native RAW decoder options on macOS
@@ -339,8 +339,49 @@ jobs:
           assert "geometry: geometry, rawOptions: rawAtExport" in ed
           assert "self.rawOptions == capturedRAW" in ed
           assert "LocalMaskCanvas(" in ed
-          assert 'CURRENT_PROJECT_VERSION: "33"' in proj
+          assert 'CURRENT_PROJECT_VERSION: "34"' in proj
           print("RAW_ENGINE_WB_CONTRACT_BUILD33_PASS")
+          PY
+      - name: Test physical Film Edge format layout and output budget
+        run: |
+          swiftc -swift-version 5 -emit-executable \
+            ios/SpectraPort/Engine/MobileFilmEdgeLayout.swift \
+            ios/tests/film-edge-layout/main.swift \
+            -framework CoreGraphics \
+            -o /tmp/spectraport-film-edge-layout
+          /tmp/spectraport-film-edge-layout | grep -q FILM_EDGE_LAYOUT_BUILD34_PASS
+      - name: Verify Film Edge preview, mask and export contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          model = Path("ios/SpectraPort/Engine/MobileFilmEdgeLayout.swift").read_text()
+          view = Path("ios/SpectraPort/App/MobileFilmEdgeEditor.swift").read_text()
+          renderer = Path("ios/SpectraPort/App/MobileFilmEdgeRenderer.swift").read_text()
+          editor = Path("ios/SpectraPort/App/EditorView.swift").read_text()
+          spectral = Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
+          project = Path("ios/project.yml").read_text()
+          assert model.count('case f') >= 7
+          assert 'case xpan = "135_xpan"' in model
+          assert 'case half = "135_half"' in model
+          assert 'case f6x17 = "120_6x17"' in model
+          assert "pixelLimit: Int" in model
+          assert "layout.canvas.width" in Path("ios/tests/film-edge-layout/main.swift").read_text()
+          assert "MobileFilmEdgeEditor(" in editor
+          assert 'case edge = "片边"' in editor
+          assert "editingMaskOnPhoto ? model.processed :" in editor
+          assert "model.framedProcessed ?? model.processed" in editor
+          assert "framedProcessed = try MobileFilmEdgeRenderer.preview(" in editor
+          assert "filmEdge: edgeAtExport" in editor
+          assert "MobileFilmEdgeRenderer.export(" in spectral
+          assert "pixelLimit: limit.pixelLimit" in spectral
+          assert "finishedURL" in spectral
+          assert "UIGraphicsImageRenderer(" in renderer
+          assert "CGImageDestinationFinalize(destination)" in renderer
+          assert "format.scale = 1" in renderer
+          assert "filed" in view and "片号" in view
+          assert "LocalMaskCanvas(" in editor
+          assert 'CURRENT_PROJECT_VERSION: "34"' in project
+          print("FILM_EDGE_PIPELINE_BUILD34_PASS")
           PY
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
@@ -383,15 +424,15 @@ jobs:
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortRAWBeta33"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "33"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortFilmEdgeBeta34"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "34"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortRAWBeta33'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '33'
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortFilmEdgeBeta34'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '34'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱RAW33'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱片边34'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -406,13 +447,13 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-RAW-v0.16.0-beta.14-Build33-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-RAW-v0.16.0-beta.14-Build33-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-FilmEdge-v0.17.0-beta.15-Build34-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-FilmEdge-v0.17.0-beta.15-Build34-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-RAW-v0.16.0-beta.14-Build33-unsigned
-          path: ios/build/SpectraPort-iOS16-RAW-v0.16.0-beta.14-Build33-unsigned.ipa
+          name: SpectraPort-FilmEdge-v0.17.0-beta.15-Build34-unsigned
+          path: ios/build/SpectraPort-iOS16-FilmEdge-v0.17.0-beta.15-Build34-unsigned.ipa
           if-no-files-found: error
       # Post-package parity checks: preserve a distributable unsigned IPA even
       # if host-specific Metal numeric fixtures report an Intel GPU mismatch.
