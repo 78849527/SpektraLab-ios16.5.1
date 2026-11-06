@@ -9,6 +9,7 @@ struct InlineMaskOverlay: View {
     @Binding var selectedID: UUID?
     let photoRect: CGRect
     let image: UIImage
+    let projection: MaskDisplayProjection
 
     @State private var lineDragStartA: CGPoint?
     @State private var lineDragStartB: CGPoint?
@@ -29,7 +30,7 @@ struct InlineMaskOverlay: View {
         guard let i = index, masks.indices.contains(i),
               !masks[i].components.isEmpty,
               masks[i].components[0].kind == .linearGradient else { return }
-        let value = MaskPhotoGeometry.normalized(touch, in: rect)
+        let value = projection.toSource(touch)
         if part == 0 { masks[i].components[0].a = value }
         else { masks[i].components[0].b = value }
     }
@@ -44,12 +45,12 @@ struct InlineMaskOverlay: View {
         }
         guard let a = lineDragStartA, let b = lineDragStartB,
               rect.width > 0, rect.height > 0 else { return }
-        // Move both points by the same delta and clamp the entire segment,
-        // preserving direction and spacing at the photo edges.
+        // Convert movement in the cropped photo back to native mask UV.
+        let delta = projection.sourceDelta(for: translation)
         let dx = max(-min(a.x, b.x),
-                     min(1 - max(a.x, b.x), translation.width / rect.width))
+                     min(1 - max(a.x, b.x), delta.width))
         let dy = max(-min(a.y, b.y),
-                     min(1 - max(a.y, b.y), translation.height / rect.height))
+                     min(1 - max(a.y, b.y), delta.height))
         masks[i].components[0].a = CGPoint(x: a.x + dx, y: a.y + dy)
         masks[i].components[0].b = CGPoint(x: b.x + dx, y: b.y + dy)
     }
@@ -60,13 +61,11 @@ struct InlineMaskOverlay: View {
               masks[i].components[0].kind == .radialGradient else { return }
         if axis == 0 {
             masks[i].components[0].a =
-                MaskPhotoGeometry.normalized(touch, in: rect)
+                projection.toSource(touch)
         } else {
             let shape = masks[i].components[0]
-            let value = MaskPhotoGeometry.radius(
-                for: touch, center: shape.a,
-                angleDegrees: shape.angle, rect: rect,
-                horizontal: axis == 1
+            let value = projection.radialRadius(
+                for: touch, shape: shape, horizontal: axis == 1
             )
             if axis == 1 { masks[i].components[0].radii.width = value }
             else { masks[i].components[0].radii.height = value }
@@ -80,7 +79,7 @@ struct InlineMaskOverlay: View {
               component.kind == .luminanceRange,
               photoRect.contains(touch),
               let cg = image.cgImage else { return }
-        let uv = MaskPhotoGeometry.normalized(touch, in: photoRect)
+        let uv = projection.toSource(touch)
         guard let luma = MaskLuminanceSampling.sample(cg, at: uv) else { return }
         let selected = MaskLuminanceSampling.range(around: luma)
         masks[i].components[0].low = selected.low
@@ -110,7 +109,7 @@ struct InlineMaskOverlay: View {
                     .background(.black.opacity(0.75), in: Capsule())
             }
         }
-        .position(MaskPhotoGeometry.point(uv, in: photoRect))
+        .position(projection.toCanvas(uv))
         .allowsHitTesting(false)
     }
 
@@ -136,39 +135,34 @@ struct InlineMaskOverlay: View {
                     .onChanged { event in onDrag(event.location) }
             )
             .position(point)
+            .opacity(photoRect.insetBy(dx: 14, dy: 14).contains(point) ? 1 : 0)
+            .allowsHitTesting(photoRect.insetBy(dx: 14, dy: 14).contains(point))
     }
 
     private func draw(_ shape: MaskComponent, in rect: CGRect,
                       into context: GraphicsContext) {
+        var clipped = context
+        clipped.clip(to: Path(rect))
         let gold = DarkroomStyle.accent
         if shape.kind == .linearGradient {
-            let a = MaskPhotoGeometry.point(shape.a, in: rect)
-            let b = MaskPhotoGeometry.point(shape.b, in: rect)
+            let a = projection.toCanvas(shape.a)
+            let b = projection.toCanvas(shape.b)
             var line = Path()
             line.move(to: a)
             line.addLine(to: b)
-            context.stroke(line, with: .color(.black.opacity(0.85)),
-                           lineWidth: 5)
-            context.stroke(line, with: .color(gold), lineWidth: 2)
+            clipped.stroke(line, with: .color(.black.opacity(0.85)), lineWidth: 5)
+            clipped.stroke(line, with: .color(gold), lineWidth: 2)
         } else if shape.kind == .radialGradient {
-            let c = MaskPhotoGeometry.point(shape.a, in: rect)
-            let long = max(rect.width, rect.height)
-            let rx = shape.radii.width * long
-            let ry = shape.radii.height * long
-            let angle = CGFloat(shape.angle * .pi / 180)
-            let ca = cos(angle), sa = sin(angle)
             var boundary = Path()
             for step in 0...96 {
-                let t = CGFloat(step) * .pi * 2 / 96
-                let u = cos(t) * rx, v = sin(t) * ry
-                let point = CGPoint(x: c.x + u * ca - v * sa,
-                                    y: c.y + u * sa + v * ca)
-                if step == 0 { boundary.move(to: point) }
-                else { boundary.addLine(to: point) }
+                let theta = CGFloat(step) * .pi * 2 / 96
+                let p = projection.toCanvas(
+                    projection.radialSourceBoundary(shape, angle: theta))
+                if step == 0 { boundary.move(to: p) }
+                else { boundary.addLine(to: p) }
             }
-            context.stroke(boundary, with: .color(.black.opacity(0.85)),
-                           lineWidth: 5)
-            context.stroke(boundary, with: .color(gold), lineWidth: 2)
+            clipped.stroke(boundary, with: .color(.black.opacity(0.85)), lineWidth: 5)
+            clipped.stroke(boundary, with: .color(gold), lineWidth: 2)
         }
     }
 
@@ -183,8 +177,8 @@ struct InlineMaskOverlay: View {
                     .allowsHitTesting(false)
 
                     if shape.kind == .linearGradient {
-                        let a = MaskPhotoGeometry.point(shape.a, in: photoRect)
-                        let b = MaskPhotoGeometry.point(shape.b, in: photoRect)
+                        let a = projection.toCanvas(shape.a)
+                        let b = projection.toCanvas(shape.b)
                         let midpoint = CGPoint(x: (a.x + b.x) / 2,
                                                y: (a.y + b.y) / 2)
                         let separation = hypot(b.x - a.x, b.y - a.y)
@@ -233,8 +227,7 @@ struct InlineMaskOverlay: View {
                                 DragGesture(minimumDistance: 0,
                                             coordinateSpace: .named("mask-photo-overlay"))
                                     .onChanged { touch in
-                                        draggingSamplePoint = MaskPhotoGeometry.normalized(
-                                            touch.location, in: photoRect)
+                                        draggingSamplePoint = projection.toSource(touch.location)
                                     }
                                     .onEnded { touch in
                                         draggingSamplePoint = nil
@@ -249,16 +242,11 @@ struct InlineMaskOverlay: View {
                             luminanceCrosshair(point, brightness: lastSampleLuma)
                         }
                     } else if shape.kind == .radialGradient {
-                        let center = MaskPhotoGeometry.point(
-                            shape.a, in: photoRect)
-                        let xHandle = MaskPhotoGeometry.radialHandle(
-                            center: shape.a, radii: shape.radii,
-                            angleDegrees: shape.angle, rect: photoRect,
-                            horizontal: true)
-                        let yHandle = MaskPhotoGeometry.radialHandle(
-                            center: shape.a, radii: shape.radii,
-                            angleDegrees: shape.angle, rect: photoRect,
-                            horizontal: false)
+                        let center = projection.toCanvas(shape.a)
+                        let xHandle = projection.toCanvas(
+                            projection.radialSourceHandle(shape, horizontal: true))
+                        let yHandle = projection.toCanvas(
+                            projection.radialSourceHandle(shape, horizontal: false))
                         handle("拖动径向蒙版中心", at: center,
                                tint: DarkroomStyle.accent) { point in
                             editRadial(point, rect: photoRect, axis: 0)

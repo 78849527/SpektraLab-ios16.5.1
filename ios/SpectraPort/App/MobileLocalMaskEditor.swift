@@ -84,7 +84,7 @@ struct MobileLocalMaskEditor: View {
             .disabled(masks.count >= EditMask.maxCount)
 
             if masks.isEmpty {
-                Text("添加选区后，可直接在照片上移动控制点，再调节局部光线和色彩。")
+                Text("在裁剪后的画面中移动蒙版；裁剪外的原始蒙版仍会保留。")
                     .font(.system(size: 11))
                     .foregroundStyle(DarkroomStyle.secondary)
             } else {

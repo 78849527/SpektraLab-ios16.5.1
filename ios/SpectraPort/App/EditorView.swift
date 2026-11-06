@@ -766,7 +766,7 @@ struct EditorView: View {
                 ? model.original
                 : (showPreviousFilm ? model.previousProcessed
                     : (editingCropOnPhoto ? model.cropEditingImage
-                        : (editingMaskOnPhoto ? model.unframedProcessed : model.processed))) {
+                        : model.processed)) {
                 GeometryReader { frame in
                     if editingCropOnPhoto {
                         PhotoCropCanvas(
@@ -779,6 +779,8 @@ struct EditorView: View {
                         // intrinsic size may change the photo/handle transform.
                         LocalMaskCanvas(
                             image: image,
+                            sourceImage: model.unframedProcessed ?? image,
+                            geometry: model.photoGeometry,
                             masks: $model.masks,
                             selectedID: $selectedMaskID
                         )

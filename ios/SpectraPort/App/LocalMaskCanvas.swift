@@ -8,6 +8,8 @@ import SwiftUI
 /// Ordinary editing still uses InlineZoomPreview, including pinch and loupe.
 struct LocalMaskCanvas: View {
     let image: UIImage
+    let sourceImage: UIImage
+    let geometry: PhotoGeometry
     @Binding var masks: [EditMask]
     @Binding var selectedID: UUID?
 
@@ -15,6 +17,10 @@ struct LocalMaskCanvas: View {
         GeometryReader { viewport in
             let photoRect = MaskPhotoGeometry.fittedRect(
                 image: image.size, viewport: viewport.size
+            )
+            let projection = MaskDisplayProjection(
+                sourceSize: sourceImage.size, displayRect: photoRect,
+                geometry: geometry
             )
             ZStack(alignment: .topLeading) {
                 Color.black
@@ -30,7 +36,8 @@ struct LocalMaskCanvas: View {
                         masks: $masks,
                         selectedID: $selectedID,
                         photoRect: photoRect,
-                        image: image
+                        image: sourceImage,
+                        projection: projection
                     )
                     .frame(width: viewport.size.width, height: viewport.size.height)
                 }
