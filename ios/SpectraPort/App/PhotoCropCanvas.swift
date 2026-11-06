@@ -15,10 +15,9 @@ struct PhotoCropCanvas: View {
             let photo = MaskPhotoGeometry.fittedRect(
                 image: image.size, viewport: viewport.size)
             let r = PhotoGeometry.bounded(geometry.crop)
-            let selection = CGRect(
-                x: photo.minX + r.minX * photo.width,
-                y: photo.minY + r.minY * photo.height,
-                width: r.width * photo.width, height: r.height * photo.height)
+            // Use the identical aspect-fit rectangle and normalized-photo
+            // projection shared with the local mask overlay.
+            let selection = MaskPhotoGeometry.cropRect(r, in: photo)
 
             ZStack(alignment: .topLeading) {
                 Color.black
@@ -113,9 +112,7 @@ struct PhotoCropCanvas: View {
             .onChanged { change in
                 if resizingFrom == nil { resizingFrom = geometry.crop }
                 guard let start = resizingFrom, photo.width > 0, photo.height > 0 else { return }
-                let point = CGPoint(
-                    x: max(0, min(1, (change.location.x - photo.minX) / photo.width)),
-                    y: max(0, min(1, (change.location.y - photo.minY) / photo.height)))
+                let point = MaskPhotoGeometry.normalized(change.location, in: photo)
                 geometry = geometry.resized(corner: corner, to: point,
                                              from: start, imageSize: image.size)
             }
