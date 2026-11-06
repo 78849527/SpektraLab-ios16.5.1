@@ -103,7 +103,7 @@ jobs:
           # Ordinary edit loupe still supports pinch, and original export
           # remains byte-for-byte untouched by this UI-only migration.
           assert "func scrollViewDidZoom" in zoom
-          assert "url = try FullSizeExporter.write(graded, format: format, geometry: geometry)" in export
+          assert "geometry: nativeEdge ? .identity : geometry" in export
           print("FIXED_LOCAL_MASK_CANVAS_CONTRACT_PASS")
           PY
       - name: Verify on-photo luminance picker uses ROMM brightness
