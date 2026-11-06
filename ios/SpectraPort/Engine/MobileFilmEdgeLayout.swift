@@ -1,9 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Output-only Film Edge beta. This does not claim to replace the Mac's
-/// RFC-032 native overscan/emulsion pass. The native film/print and masks
-/// are left untouched until engine-side film-edge parity is validated.
+/// Mobile controls mapped to the original RFC-032 native overscan engine.
 enum MobileFilmEdgeFormat: String, CaseIterable, Identifiable, Codable {
     case f135 = "135"
     case half = "135_half"
@@ -49,7 +47,7 @@ enum MobileFilmEdgeFormat: String, CaseIterable, Identifiable, Codable {
     var filmWidthMM: CGFloat { perforated ? 35 : 61 }
 }
 
-/// Mac RFC-032 gate families plus a mobile scan-carrier burnished edge.
+/// Original Mac RFC-032 gate families.
 enum MobileFilmGate: String, CaseIterable, Identifiable, Codable {
     case auto = "自动"
     case square = "直角"
@@ -57,8 +55,17 @@ enum MobileFilmGate: String, CaseIterable, Identifiable, Codable {
     case eared = "耳形"
     case shouldered = "肩形"
     case kicked = "缺口"
-    case burnished = "打磨片夹"
     var id: String { rawValue }
+    var engineValue: String {
+        switch self {
+        case .auto: "auto"
+        case .square: "square"
+        case .rounded: "rounded"
+        case .eared: "eared"
+        case .shouldered: "shouldered"
+        case .kicked: "kicked"
+        }
+    }
 }
 
 enum MobileFilmEdgeView: String, CaseIterable, Identifiable, Codable {
@@ -72,6 +79,17 @@ enum MobileFilmEdgeHoles: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
+extension MobileImprintCorner {
+    var engineValue: String {
+        switch self {
+        case .br: "br"
+        case .bl: "bl"
+        case .tr: "tr"
+        case .tl: "tl"
+        }
+    }
+}
+
 struct MobileFilmEdgeSettings: Equatable, Codable {
     var enabled = false
     var format = MobileFilmEdgeFormat.f135
@@ -81,9 +99,7 @@ struct MobileFilmEdgeSettings: Equatable, Codable {
     var dateBack = MobileDateBackSettings()
     var signature = MobileSignatureSettings()
 
-    var needsComposite: Bool {
-        enabled || dateBack.enabled || (signature.enabled && signature.hasInk)
-    }
+    var needsComposite: Bool { enabled || dateBack.enabled }
     var frameNumber = 1
     var fog = 0.4
     var leaks = 0.0
