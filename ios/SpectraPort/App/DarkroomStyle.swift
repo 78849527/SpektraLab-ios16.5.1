@@ -169,10 +169,22 @@ struct DarkroomControlRow: View {
     let step: Double
     let suffix: String
     let disabled: Bool
+    var resetValue: Double? = nil
 
     @State private var showingPrecision = false
     @State private var precisionText = ""
     @State private var isDragging = false
+
+    private var resolvedResetValue: Double {
+        let neutral = range.contains(0) ? 0 : range.lowerBound
+        return min(range.upperBound, max(range.lowerBound, resetValue ?? neutral))
+    }
+
+    private func resetToDefault() {
+        guard !disabled else { return }
+        value = resolvedResetValue
+        precisionText = formatted(value)
+    }
 
     private var decimals: Int {
         if step < 0.01 { return 3 }
@@ -276,15 +288,18 @@ struct DarkroomControlRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .frame(width: 77, alignment: .leading)
+                .onTapGesture(count: 2, perform: resetToDefault)
                 .accessibilityAddTraits(.isStaticText)
+                .accessibilityHint("双击参数名称或滑杆恢复默认值")
 
             CompactFineSlider(
                 value: $value, range: range, step: step,
-                disabled: disabled, label: label,
+                disabled: disabled, label: label, resetValue: resolvedResetValue,
                 onTrackingChange: { isDragging = $0 }
             )
             .frame(height: 38)
             .accessibilityLabel(label)
+            .accessibilityHint("双击滑杆恢复默认值")
 
             Button {
                 precisionText = formatted(value)
@@ -324,6 +339,7 @@ private struct CompactFineSlider: UIViewRepresentable {
     let step: Double
     let disabled: Bool
     let label: String
+    let resetValue: Double
     let onTrackingChange: (Bool) -> Void
 
     private static func trackImage(_ color: UIColor) -> UIImage {
@@ -367,6 +383,12 @@ private struct CompactFineSlider: UIViewRepresentable {
             UIColor(white: 0.54, alpha: 0.64)), for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 10), for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 12), for: .highlighted)
+        let resetTap = UITapGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.resetByDoubleTap(_:)))
+        resetTap.numberOfTapsRequired = 2
+        resetTap.cancelsTouchesInView = false
+        resetTap.delegate = context.coordinator
+        slider.addGestureRecognizer(resetTap)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)),
                          for: .valueChanged)
         slider.addTarget(context.coordinator, action: #selector(Coordinator.started(_:)),
@@ -390,7 +412,7 @@ private struct CompactFineSlider: UIViewRepresentable {
         slider.accessibilityValue = String(format: "%.2f", value)
     }
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var owner: CompactFineSlider
         init(_ owner: CompactFineSlider) { self.owner = owner }
 
@@ -410,6 +432,18 @@ private struct CompactFineSlider: UIViewRepresentable {
         @objc func ended(_ slider: UISlider) {
             changed(slider)
             owner.onTrackingChange(false)
+        }
+
+        @objc func resetByDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            owner.value = min(owner.range.upperBound,
+                              max(owner.range.lowerBound, owner.resetValue))
+            owner.onTrackingChange(false)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
         }
     }
 }
