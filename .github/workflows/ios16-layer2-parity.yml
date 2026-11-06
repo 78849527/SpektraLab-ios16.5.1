@@ -466,7 +466,7 @@ jobs:
           assert 'model.updateSignature($0)' in editor
           assert 'MobileSignaturePad(strokes: $settings.strokes)' in ui
           assert 'DatePicker("日期", selection: $settings.date' in ui
-          assert 'case .dots' in image
+          assert 'if face == .dots' in image and 'drawDots(text,' in image
           assert 'if signature.style == .type' in image and 'for stroke in signature.strokes' in image
           assert 'case .burnished' in cards
           assert 'next.gate = .burnished' in cards
