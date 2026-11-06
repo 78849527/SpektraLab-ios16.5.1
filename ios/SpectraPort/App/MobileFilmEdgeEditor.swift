@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Compact mobile output-only film-edge controls. Format names and physical
+/// Compact controls for the original native film-edge renderer. Format names and physical
 /// gate dimensions are sourced from the desktop FilmEdgeFormat model.
 struct MobileFilmEdgeEditor: View {
     @Binding var settings: MobileFilmEdgeSettings
@@ -9,7 +9,7 @@ struct MobileFilmEdgeEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text("胶片片边 · 基础版")
+                Text("胶片片边 · 原版引擎")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DarkroomStyle.primary)
                 Spacer()
@@ -18,7 +18,7 @@ struct MobileFilmEdgeEditor: View {
                     .tint(DarkroomStyle.accent)
                     .disabled(disabled)
             }
-            Text("按原版 135 / 120 / XPan 画幅计算片边；预览和高清导出一致。")
+            Text("片边作为负片曝光进入原版光谱引擎；预览与高清导出使用同一组原生参数。")
                 .font(.system(size: 10))
                 .foregroundStyle(DarkroomStyle.secondary)
 
@@ -115,7 +115,7 @@ struct MobileFilmEdgeEditor: View {
                 )
             }
             HStack {
-                Text("片门支持六种 Mac 形状及打磨片夹；日期和签名可独立启用。原版负片物理 Overscan 仍需单独验证。")
+                Text("使用原版引擎支持的六种片门形状。日期后背可独立启用；漏光、雾化和片号进入负片渲染。")
                     .font(.system(size: 10))
                     .foregroundStyle(DarkroomStyle.secondary)
                 Spacer(minLength: 4)
