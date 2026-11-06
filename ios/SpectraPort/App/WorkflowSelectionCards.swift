@@ -33,27 +33,22 @@ struct WorkflowStockCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            // The film/paper name is only printed once, below the pack.
+            // At 96x74pt, the former duplicate title and 6.5pt label
+            // were too small to be usable on an actual phone.
+            VStack(spacing: 4) {
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(packageColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(isFuji ? "FUJICOLOR" : (isKodak ? "KODAK" : "FILM"))
-                            .font(.system(size: 8, weight: .black, design: .rounded))
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
-                        Rectangle()
-                            .fill(.white.opacity(0.76))
-                            .frame(height: 2)
-                        Text(shortName)
-                            .font(.system(size: 9, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
                         Spacer(minLength: 0)
                         Text(isPaper ? "PHOTO PAPER" : "COLOR NEGATIVE")
-                            .font(.system(size: 6.5, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .font(.system(size: 8.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.9))
                             .lineLimit(1)
                     }
                     .padding(6)
@@ -61,11 +56,12 @@ struct WorkflowStockCard: View {
                 .frame(height: 39)
 
                 Text(shortName)
-                    .font(.system(size: 10, weight: selected ? .semibold : .medium))
+                    .font(.system(size: 10.5, weight: selected ? .semibold : .medium))
                     .foregroundStyle(DarkroomStyle.primary)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.85)
                     .multilineTextAlignment(.center)
-                    .frame(height: 20, alignment: .top)
+                    .frame(height: 22, alignment: .center)
             }
             .padding(4)
             .frame(width: 96, height: 74)
