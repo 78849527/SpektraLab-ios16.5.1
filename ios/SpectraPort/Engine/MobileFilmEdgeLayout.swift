@@ -55,7 +55,9 @@ enum MobileFilmGate: String, CaseIterable, Identifiable, Codable {
     case eared = "耳形"
     case shouldered = "肩形"
     case kicked = "缺口"
+    case burnished = "打磨片夹" // legacy stored value; not offered by the original engine
     var id: String { rawValue }
+    static var nativeCases: [MobileFilmGate] { allCases.filter { $0 != .burnished } }
     var engineValue: String {
         switch self {
         case .auto: "auto"
@@ -64,6 +66,7 @@ enum MobileFilmGate: String, CaseIterable, Identifiable, Codable {
         case .eared: "eared"
         case .shouldered: "shouldered"
         case .kicked: "kicked"
+        case .burnished: "auto"
         }
     }
 }
