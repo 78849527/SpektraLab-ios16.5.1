@@ -470,7 +470,7 @@ final class EditorModel: ObservableObject {
             return
         }
         replaceSourceImage(capture.processedData, format: capture.modeLabel)
-        status = "系统相机照片已导入，正在进行光谱渲染…"
+        status = "暗房相机照片已导入，正在进行光谱渲染…"
         applySettings()
     }
 
