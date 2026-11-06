@@ -106,7 +106,8 @@ struct MobileFilmEdgeEditor: View {
                 DarkroomControlRow(
                     label: "片边雾化", value: $settings.fog,
                     range: 0...4, step: 0.1, suffix: "",
-                    disabled: disabled
+                    disabled: disabled,
+                    resetValue: 0.4
                 )
                 DarkroomControlRow(
                     label: "片边漏光", value: $settings.leaks,
