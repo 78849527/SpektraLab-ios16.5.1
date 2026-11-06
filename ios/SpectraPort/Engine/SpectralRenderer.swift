@@ -32,6 +32,8 @@ final class SpectralRenderer {
     private var cachedPhotoID: UUID?
     private var cachedOriginal: UIImage?
     private var appliedSettings: FilmSettings?
+    private var appliedFilmEdge: MobileFilmEdgeSettings?
+    private var appliedGeometry: PhotoGeometry?
     private var desktopLayer2: DesktopLayer2Processor?
 
     private struct CachedPrint {
@@ -99,11 +101,14 @@ final class SpectralRenderer {
 
     func render(data: Data, photoID: UUID, settings: FilmSettings,
                 rawOptions: RAWDecodeOptions?,
+                filmEdge: MobileFilmEdgeSettings,
+                geometry: PhotoGeometry,
                 completion: @escaping (Result<RenderedPhoto, Error>) -> Void) {
         queue.async {
             let result = Result {
                 try self.renderSynchronously(data, photoID: photoID, settings: settings,
-                                             rawOptions: rawOptions)
+                                             rawOptions: rawOptions, filmEdge: filmEdge,
+                                             geometry: geometry)
             }
             DispatchQueue.main.async { completion(result) }
         }
@@ -154,6 +159,8 @@ final class SpectralRenderer {
         cachedOriginal = nil
         cachedPrint = nil
         appliedSettings = nil
+        appliedFilmEdge = nil
+        appliedGeometry = nil
         desktopLayer2 = nil
     }
 
@@ -191,7 +198,10 @@ final class SpectralRenderer {
         let native = try ensureEngine()
         var openReply: UnsafeMutablePointer<CChar>?
         defer { if let openReply { spk_string_free(openReply) } }
-        let delta = try settings.deltaJSON(striped: true)
+        let nativeEdge = filmEdge.needsComposite
+        let delta = try settings.deltaJSON(striped: !nativeEdge,
+                                           filmEdge: filmEdge, geometry: geometry,
+                                           filmName: FilmCatalog.filmName(settings.filmStock))
         let opened: OpaquePointer? = frame.pixels.withUnsafeBufferPointer { buffer in
             var input = spk_image(
                 data: buffer.baseAddress, width: UInt32(frame.width),
@@ -230,25 +240,15 @@ final class SpectralRenderer {
                 adjustments: settings.adjustments,
                 masks: settings.masks
             )
-            url = try FullSizeExporter.write(graded, format: format, geometry: geometry)
+            url = try FullSizeExporter.write(graded, format: format,
+                                             geometry: nativeEdge ? .identity : geometry)
         } else {
             // Identical to the original port when Layer 2 is neutral.
-            url = try FullSizeExporter.write(output, format: format, geometry: geometry)
+            url = try FullSizeExporter.write(output, format: format,
+                                             geometry: nativeEdge ? .identity : geometry)
         }
-        // Film edge is applied AFTER spectral print + desktop Layer2 + crop.
-        // This is a distinct mobile compositor, not the Mac native overscan
-        // physics path, and leaves source-local masks in their original UVs.
-        let finishedURL: URL
-        if filmEdge.needsComposite {
-            report("生成片边、日期后背和签名…")
-            finishedURL = try MobileFilmEdgeRenderer.export(
-                sourceURL: url, settings: filmEdge,
-                filmName: FilmCatalog.filmName(settings.filmStock),
-                pixelLimit: limit.pixelLimit
-            )
-        } else {
-            finishedURL = url
-        }
+        // Film edge and date back are exposed on the negative by the original engine.
+        let finishedURL = url
         let attributes = try FileManager.default.attributesOfItem(atPath: finishedURL.path)
         let bytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
         guard let imageSource = CGImageSourceCreateWithURL(finishedURL as CFURL, nil),
@@ -289,6 +289,8 @@ final class SpectralRenderer {
 
     private func openPhoto(_ data: Data, photoID: UUID,
                            settings: FilmSettings, rawOptions: RAWDecodeOptions?,
+                           filmEdge: MobileFilmEdgeSettings,
+                           geometry: PhotoGeometry,
                            engine: OpaquePointer) throws {
         // The previous session's native buffers must be freed before opening
         // a differently sized photo. Engine kernels/tables survive the switch.
@@ -298,6 +300,8 @@ final class SpectralRenderer {
         cachedOriginal = nil
         cachedPrint = nil
         appliedSettings = nil
+        appliedFilmEdge = nil
+        appliedGeometry = nil
 
         let width: Int
         let height: Int
@@ -358,7 +362,9 @@ final class SpectralRenderer {
 
         var openReply: UnsafeMutablePointer<CChar>?
         defer { if let openReply { spk_string_free(openReply) } }
-        let delta = try settings.deltaJSON()
+        let delta = try settings.deltaJSON(
+            striped: false, filmEdge: filmEdge, geometry: geometry,
+            filmName: FilmCatalog.filmName(settings.filmStock))
         let opened: OpaquePointer? = floats.withUnsafeBufferPointer { buffer in
             var frame = spk_image(
                 data: buffer.baseAddress,
@@ -375,6 +381,8 @@ final class SpectralRenderer {
         cachedPhotoID = photoID
         cachedOriginal = UIImage(cgImage: thumbnail)
         appliedSettings = settings
+        appliedFilmEdge = filmEdge
+        appliedGeometry = geometry
     }
 
     /// Read back original C++ model settings instead of assuming the
@@ -424,12 +432,15 @@ final class SpectralRenderer {
 
     private func renderSynchronously(_ data: Data, photoID: UUID,
                                      settings: FilmSettings,
-                                     rawOptions: RAWDecodeOptions?) throws -> RenderedPhoto {
+                                     rawOptions: RAWDecodeOptions?,
+                                     filmEdge: MobileFilmEdgeSettings,
+                                     geometry: PhotoGeometry) throws -> RenderedPhoto {
         // Curves, grading and masks are *after* the chemical/physical print.
         // Avoid recomputing the 81-wavelength negative/print when only Layer2
         // changed; preserve the exact RGBA16 print as a memory-bounded cache.
         if cachedPhotoID == photoID,
            let previous = appliedSettings,
+           appliedFilmEdge == filmEdge, appliedGeometry == geometry,
            previous.samePhysicalPrint(as: settings),
            let cache = cachedPrint,
            let original = cachedOriginal {
@@ -446,9 +457,11 @@ final class SpectralRenderer {
 
         let engine = try ensureEngine()
         if cachedPhotoID != photoID || session == nil ||
-            appliedSettings?.softness != settings.softness {
+            appliedSettings?.softness != settings.softness ||
+            appliedFilmEdge != filmEdge || appliedGeometry != geometry {
             try openPhoto(data, photoID: photoID, settings: settings,
-                          rawOptions: rawOptions, engine: engine)
+                          rawOptions: rawOptions, filmEdge: filmEdge,
+                          geometry: geometry, engine: engine)
         } else if let previous = appliedSettings, previous != settings {
             // A print-only change reuses the existing film negative.
             // A film-side change automatically invalidates it upstream.
