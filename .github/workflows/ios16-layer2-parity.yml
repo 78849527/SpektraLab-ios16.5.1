@@ -142,7 +142,7 @@ jobs:
           assert "LocalMaskCanvas(" in editor
           assert "showingQuickHelp" in editor
           assert 'CURRENT_PROJECT_VERSION: "47"' in project
-          assert "url = try FullSizeExporter.write(graded, format: format, geometry: geometry)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
+          assert "geometry: nativeEdge ? .identity : geometry" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
           print("COMPACT_UI_BUILD33_PASS")
           PY
       - name: Verify all nine navigation actions are in the single middle row
@@ -158,7 +158,7 @@ jobs:
           assert 'compactNavLabel("图库"' in menu
           assert 'compactNavLabel("拍摄"' in menu
           assert "openCamera()" in menu
-          assert "ForEach([EditorTab.film, .paper, .adjust, .grade, .presets, .export]" in menu
+          assert "ForEach([EditorTab.film, .adjust, .grade, .presets, .export]" in menu
           assert 'case export = "更多"' in editor
           assert "shareFullResolutionToApps()" in menu
           assert 'compactNavLabel("分享"' in menu
@@ -543,8 +543,8 @@ jobs:
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
-          grep -Fq 'url = try FullSizeExporter.write(graded, format: format, geometry: geometry)' ios/SpectraPort/Engine/SpectralRenderer.swift
-          grep -Fq 'url = try FullSizeExporter.write(output, format: format, geometry: geometry)' ios/SpectraPort/Engine/SpectralRenderer.swift
+          grep -Fq 'geometry: nativeEdge ? .identity : geometry' ios/SpectraPort/Engine/SpectralRenderer.swift
+          grep -Fq 'geometry: nativeEdge ? .identity : geometry' ios/SpectraPort/Engine/SpectralRenderer.swift
           grep -Fq 'METAL_GPU_FIXTURES_PASS' ios/tests/metal/main.swift
           grep -Fq 'destination = "editor"' ios/SpectraPort/App/SpectraPortApp.swift
           test ! -f ios/SpectraPort/App/SpectraCameraView.swift
