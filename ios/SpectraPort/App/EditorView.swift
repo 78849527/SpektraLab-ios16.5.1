@@ -2281,6 +2281,21 @@ struct EditorView: View {
             .sheet(isPresented: $showingStartupSettings) {
                 StartupSettingsView()
             }
+            .sheet(isPresented: $showingFilmEdgeEditor) {
+                NavigationStack {
+                    MobileFilmEdgeEditor(
+                        settings: filmEdgeBinding,
+                        disabled: model.isBusy || model.isRendering
+                    )
+                    .navigationTitle("片边")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { showingFilmEdgeEditor = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
             .sheet(isPresented: $showingDateBackEditor) {
                 NavigationStack {
                     MobileDateBackEditor(
