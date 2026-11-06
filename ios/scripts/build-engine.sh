@@ -41,6 +41,8 @@ SOURCES=(
   "$ENGINE"/src/pipeline/overscan.cpp
   "$ENGINE"/src/pipeline/pipeline.cpp
   "$ENGINE"/src/pipeline/scene_latitude.cpp
+  "$ENGINE"/src/io/raw_decoder.cpp
+  "$ENGINE"/src/io/raw_headroom.cpp
   "$ENGINE"/src/gpu/metal_gpu.cpp
   "$ENGINE"/src/gpu/metal_impl.cpp
 )
