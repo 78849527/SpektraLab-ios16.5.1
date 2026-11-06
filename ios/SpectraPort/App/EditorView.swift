@@ -2,6 +2,7 @@ import AVFoundation
 import Metal
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 import UIKit
 
 @MainActor
@@ -20,6 +21,8 @@ final class EditorModel: ObservableObject {
     @Published var previewSequence = 0
     @Published var photoSelectionVersion = 0
     @Published var capturedFormat = "照片图库"
+    @Published private(set) var rawOptions: RAWDecodeOptions?
+    @Published private(set) var rawAsShot: RAWProbe?
     @Published var lastElapsedMS: Double?
     @Published var exportLimit: ExportLimit = .safe
     @Published var exportPhase = ""
@@ -56,6 +59,48 @@ final class EditorModel: ObservableObject {
     var onSuccessfulRender: ((FilmSettings) -> Void)?
 
     var currentSettings: FilmSettings { snapshot() }
+
+    /// RAW WB lives upstream of physical film simulation and is never stored
+    /// inside reusable film/paper presets. Invalidate native photo cache.
+    func changeRAWOptions(_ next: RAWDecodeOptions) {
+        guard let previous = rawOptions, previous != next, !isBusy else { return }
+        rawOptions = next
+        photoID = UUID()
+        markDirty()
+    }
+
+    func importRAWFile(_ url: URL) {
+        guard !isBusy, !isRendering else { return }
+        guard RawImageDeveloper.isRaw(filename: url.lastPathComponent) else {
+            status = "请从文件选择 RAF、DNG、NEF、ARW、CR2/CR3 等 RAW"
+            return
+        }
+        isBusy = true
+        status = "读取相机 RAW 和 As Shot 白平衡…"
+        let hint = UTType(filenameExtension: url.pathExtension)?.identifier
+        Task {
+            do {
+                let payload = try await Task.detached(priority: .userInitiated) {
+                    let granted = url.startAccessingSecurityScopedResource()
+                    defer { if granted { url.stopAccessingSecurityScopedResource() } }
+                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    let probe = try RawImageDeveloper.probe(data, hint: hint)
+                    return (data, probe)
+                }.value
+                replaceSourceImage(payload.0, format: "相机 RAW · " + url.pathExtension.uppercased())
+                rawAsShot = payload.1
+                rawOptions = RAWDecodeOptions(
+                    identifierHint: hint, useAsShot: true,
+                    temperature: payload.1.temperature, tint: payload.1.tint,
+                    lensCorrection: payload.1.lensCorrectionSupported)
+                isBusy = false
+                applySettings()
+            } catch {
+                isBusy = false
+                status = "RAW 文件无法显影：" + error.localizedDescription
+            }
+        }
+    }
 
     /// Geometry is photo-specific, not part of a reusable film/paper preset.
     /// Re-render only the already-processed preview when moving crop handles.
@@ -159,18 +204,23 @@ final class EditorModel: ObservableObject {
         debounceTask?.cancel()
         debounceTask = nil
         let captured = snapshot()
+        let capturedRAW = rawOptions
         let capturedPhotoID = photoID
         previewInFlight = true
         isRendering = true
         isDirty = false
         status = "光谱预览计算中…"
 
-        renderer.render(data: data, photoID: capturedPhotoID, settings: captured) { [weak self] outcome in
+        renderer.render(
+            data: data, photoID: capturedPhotoID, settings: captured,
+            rawOptions: capturedRAW
+        ) { [weak self] outcome in
             guard let self else { return }
             self.previewInFlight = false
             self.isRendering = false
 
-            let upToDate = self.photoID == capturedPhotoID && self.snapshot() == captured
+            let upToDate = self.photoID == capturedPhotoID &&
+                self.snapshot() == captured && self.rawOptions == capturedRAW
             switch outcome {
             case let .success(photo):
                 if upToDate {
@@ -253,7 +303,20 @@ final class EditorModel: ObservableObject {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     throw PortError.message("照片读取失败")
                 }
-                replaceSourceImage(data, format: "照片图库")
+                let rawType = item.supportedContentTypes.first { $0.conforms(to: .rawImage) }
+                if let rawType {
+                    let probe = try await Task.detached(priority: .userInitiated) {
+                        try RawImageDeveloper.probe(data, hint: rawType.identifier)
+                    }.value
+                    replaceSourceImage(data, format: "相册 RAW")
+                    rawAsShot = probe
+                    rawOptions = RAWDecodeOptions(
+                        identifierHint: rawType.identifier, useAsShot: true,
+                        temperature: probe.temperature, tint: probe.tint,
+                        lensCorrection: probe.lensCorrectionSupported)
+                } else {
+                    replaceSourceImage(data, format: "照片图库")
+                }
                 isBusy = false
                 applySettings()
             } catch {
@@ -271,6 +334,8 @@ final class EditorModel: ObservableObject {
         photoID = UUID()
         photoSelectionVersion += 1
         capturedFormat = format
+        rawOptions = nil
+        rawAsShot = nil
         original = nil
         processed = nil
         unframedOriginal = nil
@@ -328,9 +393,11 @@ final class EditorModel: ObservableObject {
         status = "高清导出执行中，预览已临时释放 GPU 缓存"
         let settings = snapshot()
         let geometry = photoGeometry
+        let rawAtExport = rawOptions
         renderer.exportOriginal(
             data: data, settings: settings, format: format,
-            geometry: geometry, limit: limitOverride ?? exportLimit,
+            geometry: geometry, rawOptions: rawAtExport,
+            limit: limitOverride ?? exportLimit,
             progress: { [weak self] stage in
                 self?.exportPhase = stage
             },
@@ -448,6 +515,7 @@ struct EditorView: View {
     @State private var hasHandledStartup = false
     @State private var showingStartupSettings = false
     @State private var showingCamera = false
+    @State private var showingRAWFileImporter = false
     @State private var zoomResetToken = 0
     @State private var showingQuickHelp = false
     @State private var zoomCommand = 0
@@ -1275,6 +1343,16 @@ struct EditorView: View {
                 .font(.system(size: 11))
                 .buttonStyle(.bordered)
                 .tint(DarkroomStyle.accent)
+                Button {
+                    showingRAWFileImporter = true
+                } label: {
+                    Label("导入 RAW 相机文件（RAF / DNG / NEF 等）",
+                          systemImage: "doc.badge.plus")
+                }
+                .font(.system(size: 12))
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                .disabled(model.isBusy || model.isRendering)
                 DisclosureGroup(isExpanded: $exportExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
@@ -1463,6 +1541,102 @@ struct EditorView: View {
         .padding(.vertical, 3)
     }
 
+    private var rawDevelopControls: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let options = model.rawOptions, let asShot = model.rawAsShot {
+                HStack(spacing: 6) {
+                    Text("相机 RAW 显影")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DarkroomStyle.primary)
+                    Spacer()
+                    Text(model.capturedFormat)
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
+                Toggle("As Shot · 相机原始白平衡", isOn: Binding(
+                    get: { model.rawOptions?.useAsShot ?? true },
+                    set: { v in
+                        guard var p = model.rawOptions else { return }
+                        p.useAsShot = v
+                        model.changeRAWOptions(p)
+                    }
+                ))
+                .font(.system(size: 11))
+                .tint(DarkroomStyle.accent)
+                .disabled(model.isBusy)
+                HStack {
+                    Text(String(format: "相机：%.0f K · 色调 %+.0f",
+                                asShot.temperature, asShot.tint))
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                    Spacer()
+                    Button("恢复相机值") {
+                        var p = options
+                        p.useAsShot = true
+                        p.temperature = asShot.temperature
+                        p.tint = asShot.tint
+                        model.changeRAWOptions(p)
+                    }
+                    .font(.system(size: 10))
+                    .disabled(model.isBusy)
+                }
+                if !options.useAsShot {
+                    DarkroomControlRow(
+                        label: "RAW 色温",
+                        value: Binding(
+                            get: { model.rawOptions?.temperature ?? 5500 },
+                            set: { newValue in
+                                guard var p = model.rawOptions else { return }
+                                p.temperature = newValue
+                                model.changeRAWOptions(p)
+                            }),
+                        range: 2000...12000, step: 100, suffix: " K",
+                        disabled: model.isBusy
+                    )
+                    DarkroomControlRow(
+                        label: "RAW 色调",
+                        value: Binding(
+                            get: { model.rawOptions?.tint ?? 0 },
+                            set: { newValue in
+                                guard var p = model.rawOptions else { return }
+                                p.tint = newValue
+                                model.changeRAWOptions(p)
+                            }),
+                        range: -150...150, step: 1, suffix: "",
+                        disabled: model.isBusy
+                    )
+                }
+                Toggle("RAW 镜头修正", isOn: Binding(
+                    get: { model.rawOptions?.lensCorrection ?? false },
+                    set: { enabled in
+                        guard var p = model.rawOptions else { return }
+                        p.lensCorrection = enabled
+                        model.changeRAWOptions(p)
+                    }
+                ))
+                .font(.system(size: 11))
+                .tint(DarkroomStyle.accent)
+                .disabled(model.isBusy || !asShot.lensCorrectionSupported)
+                Text("白平衡在胶片模拟之前完成；色温/色调修改需重新解码 RAW。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
+            } else {
+                Button {
+                    showingRAWFileImporter = true
+                } label: {
+                    Label("导入相机 RAW 文件", systemImage: "doc.badge.plus")
+                }
+                .font(.system(size: 11))
+                .buttonStyle(.bordered)
+                .tint(DarkroomStyle.accent)
+                .disabled(model.isBusy || model.isRendering)
+                Text("RAF / DNG / NEF / ARW / CR3 等；以 iOS 系统支持的相机型号为准。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(DarkroomStyle.secondary)
+            }
+        }
+    }
+
     private var quickAdjustmentPanel: some View {
         DarkroomPanel {
             VStack(alignment: .leading, spacing: 3) {
@@ -1498,6 +1672,7 @@ struct EditorView: View {
                             disabled: model.isBusy || model.isRendering
                         )
                     } else if adjustmentGroup == .camera {
+                        rawDevelopControls
                         DarkroomControlRow(
                             label: "曝光补偿", value: $model.exposureEV,
                             range: -3...3, step: 0.1, suffix: " EV",
@@ -1807,6 +1982,20 @@ struct EditorView: View {
             }
             .sheet(isPresented: $showingStartupSettings) {
                 StartupSettingsView()
+            }
+            .fileImporter(
+                isPresented: $showingRAWFileImporter,
+                allowedContentTypes: [.rawImage, .data]
+            ) { selected in
+                switch selected {
+                case let .success(url):
+                    clearInlineHighResolution()
+                    model.importRAWFile(url)
+                    selectedTab = .adjust
+                    adjustmentGroup = .camera
+                case let .failure(error):
+                    model.status = "文件选择失败：" + error.localizedDescription
+                }
             }
             .fullScreenCover(isPresented: $showingCamera, onDismiss: {
                 if let capture = pendingCapture {
