@@ -2187,9 +2187,17 @@ struct EditorView: View {
             .onChange(of: model.previewSequence) { _ in
                 showPreviousFilm = false
                 clearInlineHighResolution()
-                // LocalMaskCanvas does not own or restore a zoom state.
-                // Keep its gesture/viewport identity stable across renders.
-                if !editingMaskOnPhoto { fitWholePhoto() }
+                // Pixel-only re-renders must preserve the user's current
+                // loupe position and zoom. InlineZoomPreview.install already
+                // restores its relative zoom and focal point for new pixels.
+                // The local mask canvas owns no UIScrollView zoom state.
+            }
+            .onChange(of: model.photoGeometry) { _ in
+                // An actual geometry transform changes image coordinates;
+                // refit the ordinary loupe, not the crop or mask canvases.
+                if !editingCropOnPhoto && !editingMaskOnPhoto {
+                    fitWholePhoto()
+                }
             }
             .onChange(of: selectedTab) { _ in
                 enterMaskEditingIfNeeded()
