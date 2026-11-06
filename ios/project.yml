@@ -10,6 +10,8 @@ settings:
     MARKETING_VERSION: "0.18.0"
     CURRENT_PROJECT_VERSION: "37"
     ENABLE_DEBUG_DYLIB: NO
+    CLANG_CXX_LANGUAGE_STANDARD: c++20
+    CLANG_CXX_LIBRARY: libc++
 targets:
   SpectraPort:
     type: application
