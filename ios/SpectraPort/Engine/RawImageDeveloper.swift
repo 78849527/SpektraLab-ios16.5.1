@@ -42,7 +42,8 @@ enum RawImageDeveloper {
 
     static func isRaw(filename: String, typeID: String? = nil) -> Bool {
         if rawExtensions.contains((filename as NSString).pathExtension.lowercased()) { return true }
-        return typeID.flatMap(UTType.init)?.conforms(to: .rawImage) == true
+        guard let typeID, let type = UTType(typeID) else { return false }
+        return type.conforms(to: .rawImage)
     }
 
     private static func filter(_ data: Data, options: RAWDecodeOptions) throws -> CIRAWFilter {
