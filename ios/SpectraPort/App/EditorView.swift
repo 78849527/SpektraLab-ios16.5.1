@@ -40,7 +40,6 @@ final class EditorModel: ObservableObject {
     @Published var printExposure = 1.0
     @Published var magentaShift = 0.0
     @Published var yellowShift = 0.0
-    @Published var softness = 0.0
     @Published var grade = Adjustments.default
     @Published var masks: [EditMask] = []
     @Published private(set) var photoGeometry = PhotoGeometry.identity
@@ -189,7 +188,6 @@ final class EditorModel: ObservableObject {
         printExposure = settings.printExposure
         magentaShift = settings.magentaShift
         yellowShift = settings.yellowShift
-        softness = settings.softness
         grade = settings.adjustments
         masks = settings.masks
         markDirty()
@@ -345,7 +343,7 @@ final class EditorModel: ObservableObject {
             exposureEV: exposureEV, grainAmount: grainAmount,
             halationAmount: halationAmount, printExposure: printExposure,
             magentaShift: magentaShift, yellowShift: yellowShift,
-            softness: softness,
+            softness: 0,
             adjustments: grade,
             masks: masks
         )
@@ -836,8 +834,6 @@ struct EditorView: View {
         Mac Layer2 GPU kernel: original macOS Shaders.metal::layer2
         Parity beta: v0.14.0 beta.1 · Build 20 · separate bundle
         Layer2 export safety: 6MP only, 12.5MP gated until device memory validation
-        Input digital softness: \(String(format: "%.2f", model.softness))
-        Softness stage: Core Image pre-film (independent of original C++ engine)
         Engine render ms: \(model.lastElapsedMS.map { String(format: "%.1f", $0) } ?? "N/A")
         Engine: persistent session, spk_reprint
         Pending edits: \(model.isDirty)
@@ -1064,7 +1060,7 @@ struct EditorView: View {
                 }
 
                 // Fixed overlay inside the photo surface. Changing exposure,
-                // softness or halation must not insert/remove any row from
+                // halation must not insert/remove any row from
                 // the lower editor ScrollView and shift its sliders.
                 HStack {
                     Spacer()
@@ -1511,11 +1507,6 @@ struct EditorView: View {
                         DarkroomControlRow(
                             label: "胶片颗粒", value: $model.grainAmount,
                             range: 0...2, step: 0.1, suffix: "×",
-                            disabled: model.isBusy
-                        )
-                        DarkroomControlRow(
-                            label: "数码柔化", value: $model.softness,
-                            range: 0...1, step: 0.05, suffix: "",
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
@@ -2002,14 +1993,6 @@ struct EditorView: View {
                             disabled: model.isBusy
                         )
                         DarkroomControlRow(
-                            label: "降低数码锐利感", value: $model.softness,
-                            range: 0...1, step: 0.05, suffix: "",
-                            disabled: model.isBusy
-                        )
-                        Text("0 = 保留拍摄原始锐利度；1 = 适度减弱数码边缘反差。不能还原 JPEG 已丢失的细节，胶片颗粒在此之后生成。")
-                            .font(.system(size: 10))
-                            .foregroundStyle(DarkroomStyle.secondary)
-                        DarkroomControlRow(
                             label: "反射光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
                             disabled: model.isBusy
@@ -2038,7 +2021,6 @@ struct EditorView: View {
                 if adjustmentGroup != .geometry {
                 DisclosureGroup(isExpanded: $showingQuickHelp) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("数码柔化：0 为原始锐度；1 为减弱边缘反差，不恢复 JPEG 丢失细节。")
                         Text("光晕面积：0 关闭；1 为胶片默认，夜间点光源更明显。")
                     }
                     .font(.system(size: 10))
@@ -2302,7 +2284,6 @@ struct EditorView: View {
             .onChange(of: model.printExposure) { _ in model.markDirty() }
             .onChange(of: model.magentaShift) { _ in model.markDirty() }
             .onChange(of: model.yellowShift) { _ in model.markDirty() }
-            .onChange(of: model.softness) { _ in model.markDirty() }
             .onChange(of: model.grade) { _ in model.markDirty() }
             .onChange(of: model.masks) { _ in model.markDirty() }
             .onAppear {
