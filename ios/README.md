@@ -3,7 +3,7 @@
 **Unofficial source port**, not endorsed by SpektraLab. Preserves the original
 C++20, Metal shaders, spectral material model, measured profiles and C ABI.
 
-## Current iOS build: v0.13.0 / Build 19
+## Current iOS build: v0.18.0 Beta 18 / Build 37
 
 - Minimum iOS 16.0, target validation iOS 16.5.1 and Apple A15 GPU.
 - Metal engine real preview rendering and photo import verified on one A15 device by user at v0.2.1.
@@ -58,6 +58,9 @@ C++20, Metal shaders, spectral material model, measured profiles and C ABI.
   only 1 CC per unit, below obvious visual thresholds). This changes the
   rendered look versus earlier iOS versions; stock profiles and C++ algorithms
   are unchanged.
+- Build 37 fixes RAW import from Files by allowing provider-backed files to be
+  selected, coordinating security-scoped reads, and showing decode/selection
+  failures in a visible alert.
 - The app reads C++ parameters with `spk_get_params` before accepting a
   render and checks all six slider values, two stock IDs, and filter scale.
   The preview can switch between previous and current film render, showing
