@@ -27,14 +27,14 @@ let shifted = square.moved(by: CGSize(width: 9, height: -8), from: square.crop)
 check(shifted.crop.minX >= 0 && shifted.crop.minY >= 0 && shifted.crop.maxX <= 1 &&
       shifted.crop.maxY <= 1, "crop stays inside source")
 let pulled = source.resized(corner: .topLeft, to: CGPoint(x: 0.3, y: 0.3),
-                            from: .unitRect, imageSize: CGSize(width: 1200, height: 800))
+                            from: PhotoGeometry.unitRect, imageSize: CGSize(width: 1200, height: 800))
 check(pulled.crop.width > 0.6 && pulled.crop.height > 0.6, "corner reduction")
 var tilted = source
 tilted.straightenDegrees = 8
 let upright = tilted.oriented(flat)
 check(upright.extent.width < 1200 && upright.extent.height < 800,
       "straighten safely removes transparent corners")
-let flipped = PhotoGeometry(crop: .unitRect, quarterTurns: 0,
+let flipped = PhotoGeometry(crop: PhotoGeometry.unitRect, quarterTurns: 0,
                             straightenDegrees: 0, flipHorizontal: true,
                             flipVertical: true, aspect: .free)
 check(near(flipped.apply(to: flat).extent.width, 1200), "mirror preserves width")

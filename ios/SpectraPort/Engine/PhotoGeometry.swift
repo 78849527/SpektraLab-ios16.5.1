@@ -27,7 +27,7 @@ enum CropAspectPreset: String, CaseIterable, Identifiable {
     }
 }
 
-enum CropCorner: CaseIterable {
+enum CropCorner: CaseIterable, Hashable {
     case topLeft, topRight, bottomLeft, bottomRight
 
     var left: Bool { self == .topLeft || self == .bottomLeft }
