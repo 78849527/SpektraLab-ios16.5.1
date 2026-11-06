@@ -85,7 +85,7 @@ fi
 rm -f "$archive.partial"
 
 if [[ -f "$archive" ]]; then
-  actual="$(sha256sum "$archive" | cut -d' ' -f1)"
+  actual="$(shasum -a 256 "$archive" | cut -d' ' -f1)"
   if [[ "$actual" != "$zip_sha256" ]]; then
     echo "LibRaw archive checksum mismatch ($actual); nothing was extracted or changed." >&2
     exit 1
