@@ -734,9 +734,9 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
     }
 
     private func refreshRawCapability() {
-        let available = photoOutput.availableRawPhotoPixelFormatTypes.map { $0.uint32Value }
-        let proRaw = available.first { photoOutput.isAppleProRAWPixelFormat(OSType($0)) }
-        activeRawPixelType = proRaw.map(OSType.init) ?? available.first.map(OSType.init)
+        let available = photoOutput.availableRawPhotoPixelFormatTypes
+        let proRaw = available.first { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }
+        activeRawPixelType = proRaw ?? available.first
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,

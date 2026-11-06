@@ -2181,6 +2181,17 @@ struct EditorView: View {
         }
     }
 
+    private var stableCameraPresentation: some View {
+        StableSpectraCameraView(
+            liveSettings: model.cameraPreviewSettings(),
+            onCapture: { capture in
+                pendingCapture = capture
+                showingCamera = false
+            },
+            onCancel: { showingCamera = false }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -2406,16 +2417,7 @@ struct EditorView: View {
                     selectedTab = .film
                 }
             }) {
-                StableSpectraCameraView(
-                    liveSettings: model.cameraPreviewSettings(),
-                    onCapture: { capture in
-                        pendingCapture = capture
-                        showingCamera = false
-                    },
-                    onCancel: {
-                        showingCamera = false
-                    }
-                )
+                stableCameraPresentation
             }
 
         }
