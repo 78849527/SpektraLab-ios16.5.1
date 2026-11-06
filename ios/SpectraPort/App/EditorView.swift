@@ -693,11 +693,6 @@ struct EditorView: View {
                 set: { model.updateDateBack($0) })
     }
 
-    private var signatureBinding: Binding<MobileSignatureSettings> {
-        Binding(get: { model.filmEdge.signature },
-                set: { model.updateSignature($0) })
-    }
-
     private var editingMaskOnPhoto: Bool {
         selectedTab == .grade && gradeSubsection == .local &&
         model.processed != nil && !model.compare && !showPreviousFilm
@@ -1378,9 +1373,8 @@ struct EditorView: View {
                     .minimumScaleFactor(0.7)
             }
             Spacer(minLength: 1)
-            filmEdgeEditorButton("片边细调")
+            filmEdgeEditorButton("片边参数")
             filmEdgeDateBackButton
-            filmEdgeSignatureButton
         }
     }
 
@@ -1396,20 +1390,6 @@ struct EditorView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("日期后背设置")
-    }
-
-    private var filmEdgeSignatureButton: some View {
-        Button {
-            showingSignatureEditor = true
-        } label: {
-            Image(systemName: "signature")
-                .font(.system(size: 17))
-                .foregroundStyle(model.filmEdge.signature.enabled
-                    ? DarkroomStyle.accent : DarkroomStyle.secondary)
-                .frame(width: 29, height: 38)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("签名设置")
     }
 
     private var filmEdgeChoiceCarousel: some View {
@@ -1466,9 +1446,7 @@ struct EditorView: View {
                model.filmEdge.format.label)
             : "无片边"
         let dateStatus = model.filmEdge.dateBack.enabled ? "日期开启" : "日期关闭"
-        let signStatus = model.filmEdge.signature.enabled &&
-                         model.filmEdge.signature.hasInk ? "签名开启" : "签名关闭"
-        return edge + " · " + dateStatus + " · " + signStatus
+        return edge + " · " + dateStatus
     }
 
     private func showUnportedWorkflowFeature(_ title: String,
@@ -2339,18 +2317,6 @@ struct EditorView: View {
                             Button("完成") { showingDateBackEditor = false }
                         }
                     }
-                }
-                .presentationDetents([.medium, .large])
-            }
-            .sheet(isPresented: $showingSignatureEditor) {
-                NavigationStack {
-                    MobileSignatureEditor(settings: signatureBinding)
-                        .navigationTitle("签名")
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("完成") { showingSignatureEditor = false }
-                            }
-                        }
                 }
                 .presentationDetents([.medium, .large])
             }
