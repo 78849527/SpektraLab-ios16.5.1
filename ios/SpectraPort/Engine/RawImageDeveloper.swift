@@ -268,11 +268,9 @@ enum RawImageDeveloper {
                 rgba[index * 4 + 2] = rgb[index * 3 + 2]
             }
             let bitmap = rgba.withUnsafeBytes { Data($0) }
-            guard let rawImage = CIImage(bitmapData: bitmap, bytesPerRow: w * 16,
-                                         size: CGSize(width: w, height: h),
-                                         format: .RGBAf, colorSpace: linear) else {
-                throw RAWDevelopmentError.failed
-            }
+            let rawImage = CIImage(bitmapData: bitmap, bytesPerRow: w * 16,
+                                   size: CGSize(width: w, height: h),
+                                   format: .RGBAf, colorSpace: linear)
             let nativeW = Int(nativeWidth), nativeH = Int(nativeHeight)
             let budget = sqrt(Double(maxPixels) * 0.94 / Double(w * h))
             let edge = maxEdge.map { Double($0) / Double(max(w, h)) } ?? 1
