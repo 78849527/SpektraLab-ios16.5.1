@@ -1343,84 +1343,106 @@ struct EditorView: View {
     private var filmEdgeChoiceSection: some View {
         DarkroomPanel {
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("片边 · 日期")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(DarkroomStyle.primary)
-                        Text(filmEdgeWorkflowSummary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(DarkroomStyle.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-                    Spacer(minLength: 1)
-                    filmEdgeEditorButton("片边细调")
-                    Button {
-                        showingDateBackEditor = true
-                    } label: {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 15))
-                            .foregroundStyle(model.filmEdge.dateBack.enabled
-                                ? DarkroomStyle.accent : DarkroomStyle.secondary)
-                            .frame(width: 29, height: 38)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("日期后背设置")
-                    Button {
-                        showingSignatureEditor = true
-                    } label: {
-                        Image(systemName: "signature")
-                            .font(.system(size: 17))
-                            .foregroundStyle(model.filmEdge.signature.enabled
-                                ? DarkroomStyle.accent : DarkroomStyle.secondary)
-                            .frame(width: 29, height: 38)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("签名设置")
-                }
-                ScrollViewReader { reader in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 6) {
-                            ForEach(WorkflowFilmEdgeChoice.allCases) { option in
-                                WorkflowFilmEdgeCard(
-                                    option: option,
-                                    selected: WorkflowFilmEdgeChoice.current(model.filmEdge) == option
-                                ) {
-                                    guard !model.isBusy && !model.isRendering else { return }
-                                    if option == .more {
-                                        adjustmentGroup = .edge
-                                        selectedTab = .adjust
-                                    } else {
-                                        model.setFilmEdge(option.applying(to: model.filmEdge))
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            reader.scrollTo(option.id, anchor: .center)
-                                        }
-                                    }
-                                }
-                                .id(option.id)
-                                .disabled(model.isBusy || model.isRendering)
-                            }
-                        }
-                        .padding(.top, 5)
-                        .padding(.bottom, 2)
-                    }
-                    .onAppear {
-                        reader.scrollTo(
-                            WorkflowFilmEdgeChoice.current(model.filmEdge).id,
-                            anchor: .center
-                        )
-                    }
-                    .onChange(of: model.filmEdge) { next in
-                        let option = WorkflowFilmEdgeChoice.current(next)
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            reader.scrollTo(option.id, anchor: .center)
-                        }
-                    }
-                }
+                filmEdgeChoiceHeader
+                filmEdgeChoiceCarousel
             }
         }
         .id("workflow-edge")
+    }
+
+    private var filmEdgeChoiceHeader: some View {
+        HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("片边 · 日期")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DarkroomStyle.primary)
+                Text(filmEdgeWorkflowSummary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(DarkroomStyle.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 1)
+            filmEdgeEditorButton("片边细调")
+            filmEdgeDateBackButton
+            filmEdgeSignatureButton
+        }
+    }
+
+    private var filmEdgeDateBackButton: some View {
+        Button {
+            showingDateBackEditor = true
+        } label: {
+            Image(systemName: "calendar")
+                .font(.system(size: 15))
+                .foregroundStyle(model.filmEdge.dateBack.enabled
+                    ? DarkroomStyle.accent : DarkroomStyle.secondary)
+                .frame(width: 29, height: 38)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("日期后背设置")
+    }
+
+    private var filmEdgeSignatureButton: some View {
+        Button {
+            showingSignatureEditor = true
+        } label: {
+            Image(systemName: "signature")
+                .font(.system(size: 17))
+                .foregroundStyle(model.filmEdge.signature.enabled
+                    ? DarkroomStyle.accent : DarkroomStyle.secondary)
+                .frame(width: 29, height: 38)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("签名设置")
+    }
+
+    private var filmEdgeChoiceCarousel: some View {
+        ScrollViewReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 6) {
+                    ForEach(WorkflowFilmEdgeChoice.allCases) { option in
+                        filmEdgeChoiceCard(option, reader: reader)
+                    }
+                }
+                .padding(.top, 5)
+                .padding(.bottom, 2)
+            }
+            .onAppear {
+                reader.scrollTo(
+                    WorkflowFilmEdgeChoice.current(model.filmEdge).id,
+                    anchor: .center
+                )
+            }
+            .onChange(of: model.filmEdge) { next in
+                let option = WorkflowFilmEdgeChoice.current(next)
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    reader.scrollTo(option.id, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private func filmEdgeChoiceCard(
+        _ option: WorkflowFilmEdgeChoice,
+        reader: ScrollViewProxy
+    ) -> some View {
+        WorkflowFilmEdgeCard(
+            option: option,
+            selected: WorkflowFilmEdgeChoice.current(model.filmEdge) == option
+        ) {
+            guard !model.isBusy && !model.isRendering else { return }
+            if option == .more {
+                showingFilmEdgeEditor = true
+            } else {
+                model.setFilmEdge(option.applying(to: model.filmEdge))
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    reader.scrollTo(option.id, anchor: .center)
+                }
+            }
+        }
+        .id(option.id)
+        .disabled(model.isBusy || model.isRendering)
     }
 
     private var filmEdgeWorkflowSummary: String {
@@ -1986,7 +2008,7 @@ struct EditorView: View {
                         )
                     }
                 }
-                if adjustmentGroup != .geometry && adjustmentGroup != .edge {
+                if adjustmentGroup != .geometry {
                 DisclosureGroup(isExpanded: $showingQuickHelp) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("数码柔化：0 为原始锐度；1 为减弱边缘反差，不恢复 JPEG 丢失细节。")
