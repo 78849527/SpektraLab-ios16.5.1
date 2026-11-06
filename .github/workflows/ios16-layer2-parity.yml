@@ -533,7 +533,7 @@ jobs:
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortCompactImprintBeta36'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '38'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '39'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
           /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱暗房相机39'
           test -s "$APP/Assets.car"
