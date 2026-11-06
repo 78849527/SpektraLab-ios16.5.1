@@ -9,27 +9,11 @@ struct CapturedCameraPhoto {
     let isRAW: Bool
 }
 
-private enum CameraFrameGuide: String, CaseIterable, Identifiable {
-    case fourThree = "4:3"
-    case threeTwo = "3:2"
-    case square = "1:1"
-    case openGate = "OPEN GATE"
-    var id: String { rawValue }
-    var portraitAspectRatio: CGFloat? {
-        switch self {
-        case .fourThree: return 3.0 / 4.0
-        case .threeTwo: return 2.0 / 3.0
-        case .square: return 1.0
-        case .openGate: return nil
-        }
-    }
-}
-
 struct StableSpectraCameraView: View {
     let onCapture: (CapturedCameraPhoto) -> Void
     let onCancel: () -> Void
     @StateObject private var camera = SpectraCaptureController()
-    @State private var frameGuide: CameraFrameGuide = .fourThree
+    @State private var showExposureControl = false
     @State private var focusMarker: CGPoint?
     @State private var focusToken = UUID()
     @State private var shutterTimer = 0
@@ -42,7 +26,7 @@ struct StableSpectraCameraView: View {
                 Color.black
                 CameraPreviewSurface(
                     session: camera.session,
-                    isOpenGate: frameGuide == .openGate
+                    isOpenGate: true
                 ) { devicePoint, viewPoint in
                     camera.focus(at: devicePoint)
                     focusToken = UUID()
@@ -54,11 +38,6 @@ struct StableSpectraCameraView: View {
                     }
                 }
                 .ignoresSafeArea()
-                if let guideRatio = frameGuide.portraitAspectRatio {
-                    CameraCompositionGuide(aspectRatio: guideRatio)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                }
                 if let focusMarker {
                     FocusConfirmationMark()
                         .position(focusMarker)
@@ -166,45 +145,48 @@ struct StableSpectraCameraView: View {
 
     private func captureControls(width: CGFloat) -> some View {
         VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                Text("EV")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.78))
-                Slider(value: $camera.exposureBias, in: -2...2, step: 0.1)
-                    .tint(DarkroomStyle.accent)
-                    .onChange(of: camera.exposureBias) { value in camera.setExposureBias(value) }
-                Text(String(format: "%+.1f", camera.exposureBias))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, alignment: .trailing)
-            }
-            .frame(width: width - 24)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.black.opacity(0.42), in: Capsule())
-
-            HStack(spacing: 0) {
-                ForEach(CameraFrameGuide.allCases) { option in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.18)) { frameGuide = option }
-                    } label: {
-                        Text(option == .openGate ? "OPEN GATE\n全画幅" : option.rawValue)
-                            .font(.system(size: option == .openGate ? 9 : 12, weight: .semibold, design: .rounded))
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(1)
-                            .foregroundStyle(frameGuide == option ? .black : .white)
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                            .background(
-                                frameGuide == option ? DarkroomStyle.accent : .clear,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
+            if showExposureControl {
+                HStack(spacing: 12) {
+                    Text("EV")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.78))
+                    Slider(value: $camera.exposureBias, in: -2...2, step: 0.1)
+                        .tint(DarkroomStyle.accent)
+                        .onChange(of: camera.exposureBias) { value in camera.setExposureBias(value) }
+                    Text(String(format: "%+.1f", camera.exposureBias))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .frame(width: 42, alignment: .trailing)
                 }
+                .frame(width: width - 24)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.black.opacity(0.42), in: Capsule())
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .frame(width: width - 8)
-            .padding(4)
-            .background(.black.opacity(0.42), in: Capsule())
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    showExposureControl.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("EV")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                    Text(String(format: "%+.1f", camera.exposureBias))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Spacer(minLength: 0)
+                    Image(systemName: showExposureControl ? "chevron.down" : "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .frame(width: width - 8, height: 28)
+                .background(.black.opacity(0.42), in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showExposureControl ? "收起曝光调节" : "展开曝光调节")
 
             HStack(spacing: 0) {
                 ForEach([0, 3, 10], id: \.self) { seconds in
