@@ -2183,12 +2183,12 @@ struct EditorView: View {
 
     private var stableCameraPresentation: some View {
         StableSpectraCameraView(
-            liveSettings: model.cameraPreviewSettings(),
             onCapture: { capture in
                 pendingCapture = capture
                 showingCamera = false
             },
-            onCancel: { showingCamera = false }
+            onCancel: { showingCamera = false },
+            liveSettings: model.cameraPreviewSettings()
         )
     }
 
