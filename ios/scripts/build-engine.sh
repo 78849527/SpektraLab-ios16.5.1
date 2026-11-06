@@ -22,6 +22,7 @@ else
 fi
 SYSROOT="$(xcrun --sdk "$SDK" --show-sdk-path)"
 mkdir -p "$OUT/objects" "$OUT/air" "$RESOURCE_OUT"
+LIBRAW_SOURCE="$(bash "$ENGINE/setup-libraw.sh" "$OUT/deps")"
 if [[ ! -f "$ENGINE/resources/spektrafilm_constants.bin" ]]; then
   echo "Missing tracked engine/resources/spektrafilm_constants.bin" >&2
   exit 1
@@ -50,8 +51,18 @@ for src in "${SOURCES[@]}"; do
   xcrun --sdk "$SDK" clang++ -arch "$ARCH" -isysroot "$SYSROOT" "$MIN_FLAG" \
     -std=c++20 -O2 -DNDEBUG \
     -I"$ENGINE/include" -I"$ENGINE/src" -I"$ENGINE/src/core" \
-    -I"$ENGINE/third_party/metal-cpp" \
+    -I"$ENGINE/third_party/metal-cpp" -I"$LIBRAW_SOURCE" \
+    -DLIBRAW_NODLL -DLIBRAW_NOTHREADS \
     -c "$src" -o "$obj"
+  OBJECTS+=("$obj")
+done
+for src in "$LIBRAW_SOURCE"/src/*.cpp; do
+  [[ "$src" == *_ph.cpp ]] && continue
+  obj="$OUT/objects/libraw-$(basename "${src%.cpp}").o"
+  echo "[LibRaw] $(basename "$src")"
+  xcrun --sdk "$SDK" clang++ -arch "$ARCH" -isysroot "$SYSROOT" "$MIN_FLAG" \
+    -std=c++11 -O2 -DNDEBUG -w -DLIBRAW_NODLL -DLIBRAW_NOTHREADS \
+    -I"$LIBRAW_SOURCE" -c "$src" -o "$obj"
   OBJECTS+=("$obj")
 done
 xcrun --sdk "$SDK" libtool -static -o "$OUT/libspektrafilm_engine.a" "${OBJECTS[@]}"
@@ -70,6 +81,8 @@ done
 xcrun --sdk "$SDK" metallib "${AIRS[@]}" -o "$OUT/spektrafilm.metallib"
 
 rsync -a "$ENGINE/resources/" "$RESOURCE_OUT/"
+mkdir -p "$RESOURCE_OUT/licenses/LibRaw"
+cp "$LIBRAW_SOURCE/LICENSE.LGPL" "$LIBRAW_SOURCE/COPYRIGHT" "$RESOURCE_OUT/licenses/LibRaw/"
 # Unmodified macOS Layer 2 shader: the *same* post-print curve/grade kernel.
 # Kept separate from the original engine metallib so it cannot alter Layer 1.
 DESKTOP_LAYER2="$ROOT/modern_UI/Spektrafilm/Spektrafilm/Canvas/Shaders.metal"
