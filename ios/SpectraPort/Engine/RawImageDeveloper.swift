@@ -72,6 +72,27 @@ enum RawImageDeveloper {
         return type.conforms(to: .rawImage)
     }
 
+    /// Read Files/iCloud provider URLs while the security scope is active and
+    /// coordinated. Direct Data(contentsOf:) can fail for provider-managed
+    /// files that have not been materialized in the app's process yet.
+    static func readFile(at url: URL) throws -> Data {
+        let granted = url.startAccessingSecurityScopedResource()
+        defer { if granted { url.stopAccessingSecurityScopedResource() } }
+
+        var coordinationError: NSError?
+        var readResult: Result<Data, Error>?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            readingItemAt: url, options: [], error: &coordinationError
+        ) { coordinatedURL in
+            readResult = Result {
+                try Data(contentsOf: coordinatedURL, options: .mappedIfSafe)
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let readResult else { throw RAWDevelopmentError.failed }
+        return try readResult.get()
+    }
+
     private static func filter(_ data: Data, options: RAWDecodeOptions) throws -> CIRAWFilter {
         guard !data.isEmpty, data.count <= 180_000_000 else { throw RAWDevelopmentError.unsafeFileSize }
         guard let f = CIRAWFilter(imageData: data, identifierHint: options.identifierHint) else {
