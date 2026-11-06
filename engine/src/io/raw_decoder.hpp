@@ -76,13 +76,13 @@ struct DecodedRaw {
 // No user black/white overrides, exposure adjustment, ICC profile or resize.
 // On failure, out is unchanged and error describes the failed stage.
 bool decode_raw_compatible(const std::filesystem::path& source,
-                           DecodedRaw& out, std::string& error);
+                           DecodedRaw& out, std::string& error, bool half_size = false);
 
 // The same policy with caller-chosen white-balance multipliers (R, G, B, G2;
 // LibRaw's user_mul) in place of the as-shot ones. nullptr is the overload
 // above. Used by spektralab-host for Temperature/Tint at decode.
 bool decode_raw_compatible(const std::filesystem::path& source, const std::array<float, 4>* user_mul,
-                           DecodedRaw& out, std::string& error);
+                           DecodedRaw& out, std::string& error, bool half_size = false);
 
 // Experimental expanded-output policy for conventional three-colour Bayer
 // RAW only. As-shot WB is normalised by its largest multiplier (highlight=1)
