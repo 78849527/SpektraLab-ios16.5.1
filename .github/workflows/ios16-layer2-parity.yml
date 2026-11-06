@@ -185,7 +185,7 @@ jobs:
           project = Path("ios/project.yml").read_text()
           assert ".toolbar(.hidden, for: .navigationBar)" in editor
           assert '.navigationTitle("SpectraPort")' not in editor
-          assert ".frame(height: max(220, geometry.size.height * 0.51))" in editor
+          assert "geometry.size.height * 0.30" in editor and "geometry.size.height * 0.51" in editor
           assert ".onPreferenceChange(CompactSliderReadoutKey.self)" in editor
           assert "activeSliderReadout" in editor
           assert 'private var editorSections: some View' in editor
@@ -466,7 +466,7 @@ jobs:
           assert 'MobileSignaturePad(strokes: $settings.strokes)' in ui
           assert 'DatePicker("日期", selection: $settings.date' in ui
           assert 'case .dots' in image
-          assert 'case .type' in image and 'case .drawn' not in image
+          assert 'if signature.style == .type' in image and 'for stroke in signature.strokes' in image
           assert 'case .burnished' in cards
           assert 'next.gate = .burnished' in cards
           assert 'MobileFilmGate.allCases' in Path(
