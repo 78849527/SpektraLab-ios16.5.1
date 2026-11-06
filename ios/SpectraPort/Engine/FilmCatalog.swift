@@ -119,12 +119,12 @@ struct FilmSettings: Equatable, Codable {
         softness == other.softness
     }
 
-    func deltaJSON(striped: Bool = false) throws -> String {
+    func deltaJSON(striped: Bool = false, inputCCTFDecoding: Bool = true) throws -> String {
         // These exact field names and ranges come from engine/src/core/params.cpp.
         // Keep colour-management fields identical to the successful v0.2.1 path.
         var values: [String: Any] = [
             "input_color_space": "ProPhoto RGB",
-            "input_cctf_decoding": true,
+            "input_cctf_decoding": inputCCTFDecoding,
             "product_defaults": true,
             "filter_shift_scale": 40.0,
             "film_stock": filmStock,
