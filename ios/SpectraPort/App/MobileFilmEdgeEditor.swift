@@ -54,7 +54,7 @@ struct MobileFilmEdgeEditor: View {
                         .font(.system(size: 11))
                     Spacer()
                     Picker("片门形状", selection: $settings.gate) {
-                        ForEach(MobileFilmGate.allCases) { gate in
+                        ForEach(MobileFilmGate.nativeCases) { gate in
                             Text(gate.rawValue).tag(gate)
                         }
                     }
