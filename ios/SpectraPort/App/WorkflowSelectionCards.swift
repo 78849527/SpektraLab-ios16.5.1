@@ -33,7 +33,7 @@ struct WorkflowStockCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
+            VStack(spacing: 3) {
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(packageColor)
@@ -58,17 +58,17 @@ struct WorkflowStockCard: View {
                     }
                     .padding(6)
                 }
-                .frame(height: 61)
+                .frame(height: 39)
 
                 Text(shortName)
                     .font(.system(size: 10, weight: selected ? .semibold : .medium))
                     .foregroundStyle(DarkroomStyle.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                    .frame(height: 29, alignment: .top)
+                    .frame(height: 20, alignment: .top)
             }
-            .padding(7)
-            .frame(width: 116, height: 112)
+            .padding(4)
+            .frame(width: 96, height: 74)
             .background(selected ? DarkroomStyle.raised : DarkroomStyle.surface,
                         in: RoundedRectangle(cornerRadius: 11))
             .overlay(
@@ -164,13 +164,13 @@ struct WorkflowFilmEdgeCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 7) {
+            VStack(spacing: 4) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7)
                         .strokeBorder(DarkroomStyle.secondary, lineWidth: 2)
-                        .frame(width: 65, height: 62)
+                        .frame(width: 52, height: 35)
                     Image(systemName: option.symbol)
-                        .font(.system(size: 29, weight: .light))
+                        .font(.system(size: 24, weight: .light))
                         .foregroundStyle(option.supported ?
                             DarkroomStyle.primary : DarkroomStyle.secondary)
                 }
@@ -185,7 +185,7 @@ struct WorkflowFilmEdgeCard: View {
                         .foregroundStyle(DarkroomStyle.secondary)
                 }
             }
-            .frame(width: 112, height: 114)
+            .frame(width: 96, height: 74)
             .background(selected ? DarkroomStyle.raised : DarkroomStyle.surface,
                         in: RoundedRectangle(cornerRadius: 11))
             .overlay(RoundedRectangle(cornerRadius: 11)

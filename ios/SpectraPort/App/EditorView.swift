@@ -1063,11 +1063,11 @@ struct EditorView: View {
     /// vertical scroll, with small orange-marked swipeable cards.
     private var filmSection: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .center, spacing: 7) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("胶片")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(DarkroomStyle.primary)
                         Text(activeFilmName)
                             .font(.system(size: 11))
@@ -1103,7 +1103,7 @@ struct EditorView: View {
 
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 9) {
+                        LazyHStack(spacing: 6) {
                             ForEach(filteredFilms) { stock in
                                 WorkflowStockCard(
                                     stockName: stock.name,
@@ -1120,8 +1120,8 @@ struct EditorView: View {
                                 .disabled(model.isBusy || model.isRendering)
                             }
                         }
-                        .padding(.top, 7)
-                        .padding(.bottom, 3)
+                        .padding(.top, 5)
+                        .padding(.bottom, 2)
                     }
                     .onAppear {
                         reader.scrollTo(model.filmID, anchor: .center)
@@ -1146,11 +1146,11 @@ struct EditorView: View {
 
     private var paperSection: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .center, spacing: 7) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("相纸")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(DarkroomStyle.primary)
                         Text(activePaperName)
                             .font(.system(size: 11))
@@ -1189,7 +1189,7 @@ struct EditorView: View {
 
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 9) {
+                        LazyHStack(spacing: 6) {
                             ForEach(filteredPapers) { stock in
                                 WorkflowStockCard(
                                     stockName: stock.name,
@@ -1207,8 +1207,8 @@ struct EditorView: View {
                                 .disabled(model.isBusy || model.isRendering)
                             }
                         }
-                        .padding(.top, 7)
-                        .padding(.bottom, 3)
+                        .padding(.top, 5)
+                        .padding(.bottom, 2)
                     }
                     .onAppear {
                         reader.scrollTo(model.paperID, anchor: .center)
@@ -1251,11 +1251,11 @@ struct EditorView: View {
 
     private var filmEdgeChoiceSection: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("片边 · 日期")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(DarkroomStyle.primary)
                         Text(filmEdgeWorkflowSummary)
                             .font(.system(size: 11))
@@ -1292,7 +1292,7 @@ struct EditorView: View {
                 }
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 9) {
+                        LazyHStack(spacing: 6) {
                             ForEach(WorkflowFilmEdgeChoice.allCases) { option in
                                 WorkflowFilmEdgeCard(
                                     option: option,
@@ -1317,8 +1317,8 @@ struct EditorView: View {
                                 .disabled(model.isBusy || model.isRendering)
                             }
                         }
-                        .padding(.top, 7)
-                        .padding(.bottom, 3)
+                        .padding(.top, 5)
+                        .padding(.bottom, 2)
                     }
                     .onAppear {
                         reader.scrollTo(
@@ -1354,7 +1354,7 @@ struct EditorView: View {
     }
 
     private var workflowSelectionPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
             filmSection
             paperSection
             filmEdgeChoiceSection
@@ -2044,7 +2044,9 @@ struct EditorView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     previewSection
-                        .frame(height: max(220, geometry.size.height * 0.51))
+                        .frame(height: (selectedTab == .film || selectedTab == .paper)
+                            ? max(150, min(242, geometry.size.height * 0.30))
+                            : max(220, geometry.size.height * 0.51))
                         .overlay(alignment: .top) {
                             if let activeSliderReadout {
                                 Text(activeSliderReadout)
@@ -2067,7 +2069,9 @@ struct EditorView: View {
                         ScrollView(.vertical, showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 10) {
                                 activePanel
-                                statusSection
+                                if selectedTab != .film && selectedTab != .paper {
+                                    statusSection
+                                }
                             }
                             .padding(.horizontal, 13)
                             .padding(.bottom, 18)
@@ -2075,10 +2079,10 @@ struct EditorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(DarkroomStyle.background)
                         .onChange(of: selectedTab) { tab in
-                            if tab == .film || tab == .paper {
-                                // Preserve the nine-item menu: both shortcuts
-                                // expose the same three-stack chooser, but
-                                // "相纸" lands on the second rail.
+                            if (tab == .film || tab == .paper),
+                               geometry.size.height < 640 {
+                                // Only scroll a short viewport. On standard
+                                // iPhones all three groups remain visible.
                                 let destination = tab == .paper
                                     ? "workflow-paper" : "workflow-film"
                                 DispatchQueue.main.async {
