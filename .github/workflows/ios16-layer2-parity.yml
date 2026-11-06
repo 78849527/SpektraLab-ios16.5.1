@@ -345,6 +345,7 @@ jobs:
       - name: Test physical Film Edge format layout and output budget
         run: |
           swiftc -swift-version 5 -emit-executable \
+            ios/SpectraPort/Engine/MobileImprintSettings.swift \
             ios/SpectraPort/Engine/MobileFilmEdgeLayout.swift \
             ios/tests/film-edge-layout/main.swift \
             -framework CoreGraphics \
