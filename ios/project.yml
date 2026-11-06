@@ -31,7 +31,7 @@ targets:
         PRODUCT_NAME: SpectraPort
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_OBJC_BRIDGING_HEADER: SpectraPort/Bridge/Bridge.h
-        HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/../engine/include"
+        HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/../engine/include $(PROJECT_DIR)/build/deps/LibRaw-0.22.2"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/build"
         OTHER_LDFLAGS: "$(inherited) -lspektrafilm_engine -framework Metal -framework Foundation -framework QuartzCore -framework CoreText -framework CoreGraphics -framework Accelerate -lc++"
         GENERATE_INFOPLIST_FILE: YES
