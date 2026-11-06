@@ -251,7 +251,7 @@ jobs:
           assert "geometry: geometry, rawOptions: rawAtExport" in editor
           assert "geometry.apply(to: CIImage(cgImage: picture))" in output
           assert output.count("geometry.apply(to: CIImage(cgImage: picture))") == 2
-          assert "format: format, geometry: geometry" in renderer
+          assert "geometry: nativeEdge ? .identity : geometry" in renderer
           assert "exportedWidth" in renderer and "exportedHeight" in renderer
           assert "func apply(to input: CIImage)" in helper
           assert "func oriented(_ original: CIImage)" in helper
