@@ -85,7 +85,8 @@ struct StableSpectraCameraView: View {
                     VStack(spacing: 0) {
                         topBar.padding(.top, max(geometry.safeAreaInsets.top, 48))
                         Spacer(minLength: 8)
-                        captureControls.padding(.bottom, max(geometry.safeAreaInsets.bottom, 22))
+                        captureControls(width: max(0, geometry.size.width - 40))
+                            .padding(.bottom, max(geometry.safeAreaInsets.bottom, 22))
                     }
                     .padding(.horizontal, 20)
                 }
@@ -191,7 +192,7 @@ struct StableSpectraCameraView: View {
         }
     }
 
-    private var captureControls: some View {
+    private func captureControls(width: CGFloat) -> some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Text("EV")
@@ -205,11 +206,12 @@ struct StableSpectraCameraView: View {
                     .foregroundStyle(.white)
                     .frame(width: 42, alignment: .trailing)
             }
+            .frame(width: width - 24)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(.black.opacity(0.42), in: Capsule())
 
-            HStack(spacing: 16) {
+            HStack(spacing: 0) {
                 ForEach(CameraFrameGuide.allCases) { option in
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) { frameGuide = option }
@@ -217,7 +219,7 @@ struct StableSpectraCameraView: View {
                         Text(option.rawValue)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundStyle(frameGuide == option ? .black : .white)
-                            .frame(width: 50, height: 30)
+                            .frame(maxWidth: .infinity, minHeight: 30)
                             .background(
                                 frameGuide == option ? DarkroomStyle.accent : .clear,
                                 in: Capsule()
@@ -226,10 +228,11 @@ struct StableSpectraCameraView: View {
                     .buttonStyle(.plain)
                 }
             }
+            .frame(width: width - 24)
             .padding(4)
             .background(.black.opacity(0.42), in: Capsule())
 
-            HStack(spacing: 16) {
+            HStack(spacing: 0) {
                 ForEach([0, 3, 10], id: \.self) { seconds in
                     Button {
                         shutterTimer = seconds
@@ -237,7 +240,7 @@ struct StableSpectraCameraView: View {
                         Text(seconds == 0 ? "自拍关" : "\(seconds)秒")
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundStyle(shutterTimer == seconds ? .black : .white)
-                            .frame(width: 58, height: 28)
+                            .frame(maxWidth: .infinity, minHeight: 28)
                             .background(
                                 shutterTimer == seconds ? DarkroomStyle.accent : .clear,
                                 in: Capsule()
@@ -246,22 +249,37 @@ struct StableSpectraCameraView: View {
                     .buttonStyle(.plain)
                 }
             }
+            .frame(width: width - 24)
             .padding(4)
             .background(.black.opacity(0.42), in: Capsule())
 
-            if camera.supportsAppleRAW {
-                Toggle(isOn: $camera.rawCaptureEnabled) {
-                    Label(camera.rawCaptureEnabled ? "Apple RAW / DNG" : "JPEG",
-                          systemImage: camera.rawCaptureEnabled ? "smallcircle.filled.circle" : "photo")
+            HStack(spacing: 8) {
+                Label(camera.rawCaptureEnabled ? "RAW / DNG" : "JPEG",
+                      systemImage: camera.rawCaptureEnabled ? "smallcircle.filled.circle" : "photo")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 8)
+                if camera.supportsAppleRAW {
+                    Toggle("Apple RAW", isOn: $camera.rawCaptureEnabled)
+                        .labelsHidden()
+                        .tint(DarkroomStyle.accent)
+                        .disabled(camera.isCapturing)
+                    Text("Apple RAW")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
+                } else {
+                    Label("Apple RAW", systemImage: "smallcircle.filled.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text("设备不支持")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.48))
                 }
-                .tint(DarkroomStyle.accent)
-                .disabled(camera.isCapturing)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(.black.opacity(0.42), in: Capsule())
             }
+            .frame(width: width - 24, minHeight: 34)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.black.opacity(0.42), in: Capsule())
 
             Button(action: pressShutter) {
                 ZStack {
@@ -276,7 +294,7 @@ struct StableSpectraCameraView: View {
             .accessibilityLabel("拍摄")
         }
         .padding(12)
-        .frame(maxWidth: .infinity)
+        .frame(width: width)
         .background(
             LinearGradient(
                 colors: [.clear, .black.opacity(0.82)],
@@ -702,7 +720,6 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                     if self.photoOutput.isAppleProRAWSupported {
                         self.photoOutput.isAppleProRAWEnabled = true
                     }
-                    self.refreshRawCapability()
                     if let connection = self.videoOutput.connection(with: .video),
                        connection.isVideoOrientationSupported {
                         connection.videoOrientation = .portrait
@@ -712,6 +729,7 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                     self.activeInput = input
                     self.session.commitConfiguration()
                     configurationStarted = false
+                    self.refreshRawCapability()
                     self.configured = true
                     DispatchQueue.main.async {
                         self.hasFlash = device.hasFlash
