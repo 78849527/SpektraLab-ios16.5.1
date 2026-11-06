@@ -22,7 +22,7 @@ enum MobileFilmEdgeRenderer {
 
     static func preview(_ image: UIImage, settings: MobileFilmEdgeSettings,
                         filmName: String) throws -> UIImage {
-        guard settings.enabled, let cg = image.cgImage else { return image }
+        guard settings.needsComposite, let cg = image.cgImage else { return image }
         return try UIImage(cgImage: render(
             cg, settings: settings, filmName: filmName,
             pixelLimit: 2_000_000))
@@ -30,7 +30,7 @@ enum MobileFilmEdgeRenderer {
 
     static func export(sourceURL: URL, settings: MobileFilmEdgeSettings,
                        filmName: String, pixelLimit: Int) throws -> URL {
-        guard settings.enabled else { return sourceURL }
+        guard settings.needsComposite else { return sourceURL }
         guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
               let cg = CGImageSourceCreateImageAtIndex(source, 0, [
                 kCGImageSourceShouldCache: false
@@ -83,32 +83,35 @@ enum MobileFilmEdgeRenderer {
             size: layout.canvas, format: format
         ).image { surface in
             let context = surface.cgContext
-            context.setFillColor(UIColor(
-                red: 0.055, green: 0.052, blue: 0.049, alpha: 1).cgColor)
-            context.fill(CGRect(origin: .zero, size: layout.canvas))
-            if settings.view == .filed {
+            if settings.enabled {
                 context.setFillColor(UIColor(
-                    red: 0.15, green: 0.15, blue: 0.14, alpha: 1).cgColor)
+                    red: 0.055, green: 0.052, blue: 0.049, alpha: 1).cgColor)
                 context.fill(CGRect(origin: .zero, size: layout.canvas))
+                if settings.view == .filed {
+                    context.setFillColor(UIColor(
+                        red: 0.15, green: 0.15, blue: 0.14, alpha: 1).cgColor)
+                    context.fill(CGRect(origin: .zero, size: layout.canvas))
+                }
+                let fog = CGFloat(settings.fog)
+                context.setFillColor(UIColor(
+                    red: 0.046 + fog*0.020, green: 0.030 + fog*0.014,
+                    blue: 0.021 + fog*0.007, alpha: 1).cgColor)
+                context.fill(layout.filmRect)
             }
-            let fog = CGFloat(settings.fog)
-            context.setFillColor(UIColor(
-                red: 0.046 + fog*0.020, green: 0.030 + fog*0.014,
-                blue: 0.021 + fog*0.007, alpha: 1).cgColor)
-            context.fill(layout.filmRect)
 
-            let gate = UIBezierPath(
-                roundedRect: layout.gateRect,
-                cornerRadius: max(1, layout.gateRect.height*0.0025))
+            let gate = MobileFilmGatePath.make(
+                layout.gateRect, gate: settings.gate
+            )
             context.saveGState()
-            gate.addClip()
+            if settings.enabled { gate.addClip() }
             let sourceSize = CGSize(width: source.width, height: source.height)
-            let scale = max(layout.gateRect.width/sourceSize.width,
-                            layout.gateRect.height/sourceSize.height)
+            let scale = settings.enabled
+                ? max(layout.gateRect.width/sourceSize.width,
+                      layout.gateRect.height/sourceSize.height)
+                : min(layout.gateRect.width/sourceSize.width,
+                      layout.gateRect.height/sourceSize.height)
             let drawn = CGSize(width: sourceSize.width*scale,
                                height: sourceSize.height*scale)
-            // Aspect-fill inside the physical gate, equal on preview/export.
-            // The image itself is never destructively re-cropped in the model.
             UIImage(cgImage: source).draw(in: CGRect(
                 x: layout.gateRect.midX - drawn.width/2,
                 y: layout.gateRect.midY - drawn.height/2,
@@ -116,29 +119,44 @@ enum MobileFilmEdgeRenderer {
             ))
             context.restoreGState()
 
-            context.setStrokeColor(UIColor(
-                red: 0.36, green: 0.24, blue: 0.15, alpha: 0.6).cgColor)
-            context.setLineWidth(max(0.6, layout.gateRect.width*0.0007))
-            context.addPath(gate.cgPath)
-            context.strokePath()
+            if settings.enabled {
+                context.setStrokeColor(UIColor(
+                    red: 0.36, green: 0.24, blue: 0.15, alpha: 0.6).cgColor)
+                context.setLineWidth(max(0.6, layout.gateRect.width*0.0007))
+                context.addPath(gate.cgPath)
+                context.strokePath()
 
-            let holeColor: UIColor = settings.holes == .white
-                ? UIColor(white: 0.94, alpha: 1)
-                : UIColor(white: 0.012, alpha: 1)
-            context.setFillColor(holeColor.cgColor)
-            for hole in layout.holes {
-                let path = UIBezierPath(
-                    roundedRect: hole,
-                    cornerRadius: min(hole.width,hole.height)*0.24)
-                context.addPath(path.cgPath)
-                context.fillPath()
+                let holeColor: UIColor = settings.holes == .white
+                    ? UIColor(white: 0.94, alpha: 1)
+                    : UIColor(white: 0.012, alpha: 1)
+                context.setFillColor(holeColor.cgColor)
+                for hole in layout.holes {
+                    let path = UIBezierPath(
+                        roundedRect: hole,
+                        cornerRadius: min(hole.width,hole.height)*0.24)
+                    context.addPath(path.cgPath)
+                    context.fillPath()
+                }
+                if settings.gate == .burnished {
+                    MobileFilmGatePath.drawBurnished(
+                        in: context, layout: layout,
+                        frameNumber: settings.frameNumber)
+                }
+                drawEdgeText(layout: layout, settings: settings,
+                             filmName: filmName)
+                if settings.leaks > 0 {
+                    addWarmLeak(context: context, layout: layout,
+                                strength: CGFloat(settings.leaks))
+                }
             }
 
-            drawEdgeText(layout: layout, settings: settings, filmName: filmName)
-            if settings.leaks > 0 {
-                addWarmLeak(context: context, layout: layout,
-                            strength: CGFloat(settings.leaks))
-            }
+            // Date Back is a negative date exposure (LCD / dot-matrix /
+            // data) and signatures are optional independent finish stages.
+            // Both also work without a physical film strip.
+            MobileImprintPainter.drawDate(
+                context: context, layout: layout, settings: settings)
+            MobileImprintPainter.drawSignature(
+                context: context, layout: layout, settings: settings)
         }
         guard let cg = image.cgImage else { throw Failure.renderFailed }
         return cg

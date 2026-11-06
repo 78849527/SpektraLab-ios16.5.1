@@ -239,8 +239,8 @@ final class SpectralRenderer {
         // This is a distinct mobile compositor, not the Mac native overscan
         // physics path, and leaves source-local masks in their original UVs.
         let finishedURL: URL
-        if filmEdge.enabled {
-            report("按原片画幅生成胶片片边和片孔…")
+        if filmEdge.needsComposite {
+            report("生成片边、日期后背和签名…")
             finishedURL = try MobileFilmEdgeRenderer.export(
                 sourceURL: url, settings: filmEdge,
                 filmName: FilmCatalog.filmName(settings.filmStock),
