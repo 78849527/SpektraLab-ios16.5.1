@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import Foundation
 import UniformTypeIdentifiers
 
@@ -39,6 +40,31 @@ enum RAWDevelopmentError: LocalizedError {
 enum RawImageDeveloper {
     static let rawExtensions: Set<String> =
         ["raf", "dng", "nef", "arw", "cr2", "cr3", "rw2", "orf", "pef", "srw", "3fr", "iiq"]
+
+    /// Copy the Mac ImageDecoder.linearProPhoto profile exactly. The native
+    /// film engine receives linear D50 ProPhoto, not gamma-encoded ROMM.
+    private static let linearProPhoto: CGColorSpace? = {
+        let white: [CGFloat] = [0.9642, 1.0000, 0.8249]
+        let black: [CGFloat] = [0, 0, 0]
+        let gamma: [CGFloat] = [1, 1, 1]
+        let primaries: [CGFloat] = [
+            0.7976749, 0.2880402, 0.0000000,
+            0.1351917, 0.7118741, 0.0000000,
+            0.0313534, 0.0000857, 0.8252100
+        ]
+        return white.withUnsafeBufferPointer { w in
+            black.withUnsafeBufferPointer { b in
+                gamma.withUnsafeBufferPointer { g in
+                    primaries.withUnsafeBufferPointer { m in
+                        CGColorSpace(calibratedRGBWhitePoint: w.baseAddress!,
+                                     blackPoint: b.baseAddress,
+                                     gamma: g.baseAddress!, matrix: m.baseAddress)
+                    }
+                }
+            }
+        }
+    }()
+
 
     static func isRaw(filename: String, typeID: String? = nil) -> Bool {
         if rawExtensions.contains((filename as NSString).pathExtension.lowercased()) { return true }
@@ -111,7 +137,8 @@ enum RawImageDeveloper {
             scaleX: CGFloat(width) / CGFloat(nativeW),
             y: CGFloat(height) / CGFloat(nativeH)))
             .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let proPhoto = CGColorSpace(name: CGColorSpace.rommrgb) else {
+        guard let linear = linearProPhoto,
+              let proPhotoDisplay = CGColorSpace(name: CGColorSpace.rommrgb) else {
             throw RAWDevelopmentError.noColorSpace
         }
         var rgba = [Float](repeating: 0, count: width * height * 4)
@@ -120,11 +147,11 @@ enum RawImageDeveloper {
             context.render(InputSoftening.apply(scaled, amount: softness),
                            toBitmap: base, rowBytes: width * 4 * 4,
                            bounds: CGRect(x: 0, y: 0, width: width, height: height),
-                           format: .RGBAf, colorSpace: proPhoto)
+                           format: .RGBAf, colorSpace: linear)
         }
         let cg: CGImage? = preview
             ? context.createCGImage(scaled, from: scaled.extent, format: .RGBA8,
-                                    colorSpace: proPhoto)
+                                    colorSpace: proPhotoDisplay)
             : nil
         if preview && cg == nil { throw RAWDevelopmentError.failed }
         return Frame(pixels: rgba, width: width, height: height,
