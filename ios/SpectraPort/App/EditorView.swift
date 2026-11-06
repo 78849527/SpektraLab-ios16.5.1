@@ -339,8 +339,6 @@ final class EditorModel: ObservableObject {
         markDirty()
     }
 
-    func cameraPreviewSettings() -> FilmSettings { snapshot() }
-
     private func snapshot() -> FilmSettings {
         FilmSettings(
             filmStock: filmID, printStock: paperID,
@@ -2187,8 +2185,7 @@ struct EditorView: View {
                 pendingCapture = capture
                 showingCamera = false
             },
-            onCancel: { showingCamera = false },
-            liveSettings: model.cameraPreviewSettings()
+            onCancel: { showingCamera = false }
         )
     }
 

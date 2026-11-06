@@ -1,5 +1,4 @@
 import AVFoundation
-import CoreImage
 import SwiftUI
 import UIKit
 
@@ -27,11 +26,7 @@ private enum CameraFrameGuide: String, CaseIterable, Identifiable {
 struct StableSpectraCameraView: View {
     let onCapture: (CapturedCameraPhoto) -> Void
     let onCancel: () -> Void
-    let liveSettings: FilmSettings
     @StateObject private var camera = SpectraCaptureController()
-    @State private var liveFilmImage: UIImage?
-    @State private var liveRenderInFlight = false
-    private let liveRenderer = SpectralRenderer()
     @State private var frameGuide: CameraFrameGuide = .fourThree
     @State private var focusMarker: CGPoint?
     @State private var focusToken = UUID()
@@ -54,13 +49,6 @@ struct StableSpectraCameraView: View {
                     }
                 }
                 .ignoresSafeArea()
-                if camera.liveFilmPreviewEnabled, let liveFilmImage {
-                    Image(uiImage: liveFilmImage)
-                        .resizable()
-                        .scaledToFill()
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                }
                 CameraCompositionGuide(aspectRatio: frameGuide.portraitAspectRatio)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
@@ -83,12 +71,14 @@ struct StableSpectraCameraView: View {
                     startupPrompt
                 } else {
                     VStack(spacing: 0) {
-                        topBar.padding(.top, max(geometry.safeAreaInsets.top, 48))
+                        topBar
+                            .padding(.horizontal, 20)
+                            .padding(.top, max(geometry.safeAreaInsets.top, 48))
                         Spacer(minLength: 8)
-                        captureControls(width: max(0, geometry.size.width - 40))
+                        captureControls(width: max(0, geometry.size.width - 32))
                             .padding(.bottom, max(geometry.safeAreaInsets.bottom, 22))
                     }
-                    .padding(.horizontal, 20)
+                    .frame(width: geometry.size.width, alignment: .center)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -96,7 +86,6 @@ struct StableSpectraCameraView: View {
             .ignoresSafeArea()
         }
         .onAppear { camera.start() }
-        .onChange(of: camera.previewFrameVersion) { _ in renderLiveFilmFrame() }
         .onDisappear { countdownTask?.cancel(); camera.stop() }
         .alert(
             "相机提示",
@@ -135,17 +124,6 @@ struct StableSpectraCameraView: View {
             Spacer(minLength: 4)
 
             Button {
-                camera.liveFilmPreviewEnabled.toggle()
-                if !camera.liveFilmPreviewEnabled { liveFilmImage = nil }
-            } label: {
-                Image(systemName: camera.liveFilmPreviewEnabled ? "camera.filters" : "camera")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(camera.liveFilmPreviewEnabled ? DarkroomStyle.accent : .white)
-                    .frame(width: 36, height: 42)
-            }
-            .accessibilityLabel(camera.liveFilmPreviewEnabled ? "关闭实时胶片预览" : "开启实时胶片预览")
-
-            Button {
                 camera.toggleWhiteBalanceLock()
             } label: {
                 Image(systemName: camera.whiteBalanceLocked ? "sun.max.fill" : "sun.max")
@@ -179,21 +157,8 @@ struct StableSpectraCameraView: View {
         }
     }
 
-    private func renderLiveFilmFrame() {
-        guard camera.liveFilmPreviewEnabled, !liveRenderInFlight,
-              let data = camera.previewFrameData else { return }
-        liveRenderInFlight = true
-        liveRenderer.render(data: data, photoID: UUID(), settings: liveSettings,
-                            rawOptions: nil) { result in
-            liveRenderInFlight = false
-            if case let .success(photo) = result {
-                liveFilmImage = photo.processed
-            }
-        }
-    }
-
     private func captureControls(width: CGFloat) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             HStack(spacing: 12) {
                 Text("EV")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -228,7 +193,7 @@ struct StableSpectraCameraView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .frame(width: width - 24)
+            .frame(width: width - 8)
             .padding(4)
             .background(.black.opacity(0.42), in: Capsule())
 
@@ -249,38 +214,60 @@ struct StableSpectraCameraView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .frame(width: width - 24)
+            .frame(width: width - 8)
             .padding(4)
             .background(.black.opacity(0.42), in: Capsule())
 
             HStack(spacing: 8) {
-                Label(camera.rawCaptureEnabled ? "RAW / DNG" : "JPEG",
-                      systemImage: camera.rawCaptureEnabled ? "smallcircle.filled.circle" : "photo")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                Spacer(minLength: 8)
-                if camera.supportsAppleRAW {
-                    Toggle("Apple RAW", isOn: $camera.rawCaptureEnabled)
-                        .labelsHidden()
-                        .tint(DarkroomStyle.accent)
-                        .disabled(camera.isCapturing)
-                    Text("Apple RAW")
+                Button {
+                    camera.rawCaptureEnabled = false
+                } label: {
+                    Label("JPEG", systemImage: "photo")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                } else {
-                    Label("Apple RAW", systemImage: "smallcircle.filled.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
-                    Text("设备不支持")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.48))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .foregroundStyle(camera.rawCaptureEnabled ? .white : .black)
+                        .background(
+                            camera.rawCaptureEnabled ? Color.clear : DarkroomStyle.accent,
+                            in: Capsule()
+                        )
                 }
+                .buttonStyle(.plain)
+                .disabled(camera.isCapturing)
+
+                Button {
+                    if camera.supportsAppleRAW {
+                        camera.rawCaptureEnabled = true
+                    }
+                } label: {
+                    VStack(spacing: 1) {
+                        Text("Apple RAW")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(camera.supportsAppleRAW ? "DNG" : "设备不支持")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .foregroundStyle(
+                        camera.supportsAppleRAW
+                            ? (camera.rawCaptureEnabled ? .black : .white)
+                            : .white.opacity(0.52)
+                    )
+                    .background(
+                        camera.rawCaptureEnabled ? DarkroomStyle.accent : Color.clear,
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(camera.isCapturing || !camera.supportsAppleRAW)
+                .accessibilityHint(
+                    camera.supportsAppleRAW ? "以 Apple RAW DNG 格式拍摄" : "此设备不支持 Apple RAW"
+                )
             }
-            .frame(width: width - 24)
-            .frame(minHeight: 34)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.black.opacity(0.42), in: Capsule())
+            .frame(width: width - 16)
+            .padding(8)
+            .background(.black.opacity(0.55), in: Capsule())
+
 
             Button(action: pressShutter) {
                 ZStack {
@@ -294,8 +281,7 @@ struct StableSpectraCameraView: View {
             .disabled(!camera.isConfigured || camera.isCapturing || countdownTask != nil)
             .accessibilityLabel("拍摄")
         }
-        .padding(12)
-        .frame(width: width)
+        .frame(width: width, alignment: .center)
         .background(
             LinearGradient(
                 colors: [.clear, .black.opacity(0.82)],
@@ -477,8 +463,7 @@ private final class CameraPreviewHostView: UIView {
 }
 
 private final class SpectraCaptureController: NSObject, ObservableObject,
-                                               AVCapturePhotoCaptureDelegate,
-                                               AVCaptureVideoDataOutputSampleBufferDelegate {
+                                               AVCapturePhotoCaptureDelegate {
     @Published private(set) var isConfigured = false
     @Published private(set) var isCapturing = false
     @Published private(set) var hasFlash = false
@@ -491,17 +476,10 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
     @Published private(set) var errorMessage: String?
     @Published private(set) var supportsAppleRAW = false
     @Published var rawCaptureEnabled = false
-    @Published var liveFilmPreviewEnabled = true
-    @Published private(set) var previewFrameVersion = 0
-    @Published private(set) var previewFrameData: Data?
 
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.twogou.spectraport.camera-session")
     private let photoOutput = AVCapturePhotoOutput()
-    private let videoOutput = AVCaptureVideoDataOutput()
-    private let videoQueue = DispatchQueue(label: "com.twogou.spectraport.camera-preview")
-    private let previewContext = CIContext(options: [.cacheIntermediates: false])
-    private var lastPreviewTime: CFTimeInterval = 0
     private var activeRawPixelType: OSType?
     private var captureUsesRAW = false
     private var activeDevice: AVCaptureDevice?
@@ -706,24 +684,11 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                     guard self.session.canAddOutput(self.photoOutput) else {
                         throw PortError.message("无法启动照片拍摄输出")
                     }
-                    self.videoOutput.videoSettings = [
-                        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-                    ]
-                    self.videoOutput.alwaysDiscardsLateVideoFrames = true
-                    self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
-                    guard self.session.canAddOutput(self.videoOutput) else {
-                        throw PortError.message("无法启动实时取景输出")
-                    }
                     self.session.addInput(input)
                     self.session.addOutput(self.photoOutput)
-                    self.session.addOutput(self.videoOutput)
                     self.photoOutput.isHighResolutionCaptureEnabled = true
                     if self.photoOutput.isAppleProRAWSupported {
                         self.photoOutput.isAppleProRAWEnabled = true
-                    }
-                    if let connection = self.videoOutput.connection(with: .video),
-                       connection.isVideoOrientationSupported {
-                        connection.videoOrientation = .portrait
                     }
                     self.photoOutput.isHighResolutionCaptureEnabled = true
                     self.activeDevice = device
@@ -756,25 +721,6 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
         let available = photoOutput.availableRawPhotoPixelFormatTypes
         let proRaw = available.first { AVCapturePhotoOutput.isAppleProRAWPixelFormat($0) }
         activeRawPixelType = proRaw ?? available.first
-    }
-
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
-                       from connection: AVCaptureConnection) {
-        let now = CACurrentMediaTime()
-        guard liveFilmPreviewEnabled, now - lastPreviewTime >= 0.8,
-              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        lastPreviewTime = now
-        let image = CIImage(cvPixelBuffer: pixelBuffer)
-        let scale = min(1.0, 480.0 / max(image.extent.width, image.extent.height))
-        let previewImage = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        guard let cg = previewContext.createCGImage(previewImage, from: previewImage.extent),
-              let data = UIImage(cgImage: cg, scale: 1, orientation: .up)
-                .jpegData(compressionQuality: 0.68) else { return }
-        DispatchQueue.main.async {
-            guard self.liveFilmPreviewEnabled else { return }
-            self.previewFrameData = data
-            self.previewFrameVersion &+= 1
-        }
     }
 
     private func finishCapture(_ result: Result<Data, Error>) {
