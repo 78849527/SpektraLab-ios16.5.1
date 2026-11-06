@@ -46,7 +46,19 @@ enum FullSizeExporter {
 
     /// Decode only after a metadata preflight, so a 48/100 MP source isn't
     /// accidentally decompressed at full resolution on a 4 GB iPhone.
-    static func decode(_ data: Data, limit: ExportLimit, softness: Double = 0) throws -> DecodedFrame {
+    static func decode(_ data: Data, limit: ExportLimit, softness: Double = 0,
+                       rawOptions: RAWDecodeOptions? = nil) throws -> DecodedFrame {
+        if let rawOptions {
+            let image = try RawImageDeveloper.develop(
+                data, options: rawOptions, maxPixels: limit.pixelLimit,
+                softness: softness,
+                context: CIContext(options: [.cacheIntermediates: false])
+            )
+            return DecodedFrame(
+                pixels: image.pixels, width: image.width, height: image.height,
+                nativeWidth: image.nativeWidth, nativeHeight: image.nativeHeight
+            )
+        }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
