@@ -389,8 +389,9 @@ jobs:
           assert "framedProcessed = nil" in editor
           assert "filmEdge: edgeAtExport" in editor
           assert "MobileFilmEdgeRenderer.export(" not in spectral
-          assert '"overscan_active"' in Path("ios/SpectraPort/Engine/FilmCatalog.swift").read_text()
-          assert '"date_imprint_active"' in Path("ios/SpectraPort/Engine/FilmCatalog.swift").read_text()
+          native = Path("ios/SpectraPort/Engine/FilmEdgeEngineParameters.swift").read_text()
+          assert '"overscan_active"' in native
+          assert '"date_imprint_active"' in native
           assert "filmEdge: filmEdge" in spectral and "geometry: geometry" in spectral
           assert "nativeEdge ? .identity : geometry" in spectral
           assert "finishedURL" in spectral
