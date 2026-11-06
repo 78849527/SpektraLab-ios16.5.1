@@ -132,7 +132,7 @@ final class EditorModel: ObservableObject {
             do {
                 let payload = try await Task.detached(priority: .userInitiated) {
                     let data = try RawImageDeveloper.readFile(at: url)
-                    let probe = try RawImageDeveloper.probe(data, hint: hint)
+                    let probe = try RawImageDeveloper.probe(data, hint: hint, filename: url.lastPathComponent)
                     return (data, probe)
                 }.value
                 replaceSourceImage(payload.0, format: "相机 RAW · " + url.pathExtension.uppercased())
@@ -140,7 +140,8 @@ final class EditorModel: ObservableObject {
                 rawOptions = RAWDecodeOptions(
                     identifierHint: hint, useAsShot: true,
                     temperature: payload.1.temperature, tint: payload.1.tint,
-                    lensCorrection: payload.1.lensCorrectionSupported)
+                    lensCorrection: payload.1.lensCorrectionSupported,
+                    decoder: payload.1.decoder)
                 isBusy = false
                 applySettings()
             } catch {
@@ -581,7 +582,6 @@ private enum AdjustmentGroup: String, CaseIterable {
     case camera = "拍摄与胶片"
     case print = "暗房冲印"
     case geometry = "裁剪"
-    case edge = "片边"
 }
 
 private enum PaperBrowseFilter: String, CaseIterable {
@@ -615,6 +615,7 @@ struct EditorView: View {
     @State private var showingStartupSettings = false
     @State private var showingCamera = false
     @State private var showingRAWFileImporter = false
+    @State private var showingFilmEdgeEditor = false
     @State private var showingDateBackEditor = false
     @State private var showingSignatureEditor = false
     @State private var zoomResetToken = 0
@@ -1323,6 +1324,18 @@ struct EditorView: View {
         .accessibilityLabel(label)
     }
 
+    private func filmEdgeEditorButton(_ label: String) -> some View {
+        Button { showingFilmEdgeEditor = true } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(DarkroomStyle.accent)
+                .frame(width: 34, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
     private var filmEdgeChoiceSection: some View {
         DarkroomPanel {
             VStack(alignment: .leading, spacing: 5) {
@@ -1338,7 +1351,7 @@ struct EditorView: View {
                             .minimumScaleFactor(0.7)
                     }
                     Spacer(minLength: 1)
-                    workflowTuneButton("片边细调", group: .edge)
+                    filmEdgeEditorButton("片边细调")
                     Button {
                         showingDateBackEditor = true
                     } label: {
@@ -1797,6 +1810,7 @@ struct EditorView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(DarkroomStyle.secondary)
                 }
+                if options.decoder == .coreImage {
                 Toggle("As Shot · 相机原始白平衡", isOn: Binding(
                     get: { model.rawOptions?.useAsShot ?? true },
                     set: { v in
@@ -1824,7 +1838,7 @@ struct EditorView: View {
                     .font(.system(size: 10))
                     .disabled(model.isBusy)
                 }
-                if !options.useAsShot {
+                if !options.useAsShot && options.decoder == .coreImage {
                     DarkroomControlRow(
                         label: "RAW 色温",
                         value: Binding(
@@ -1861,9 +1875,16 @@ struct EditorView: View {
                 .font(.system(size: 11))
                 .tint(DarkroomStyle.accent)
                 .disabled(model.isBusy || !asShot.lensCorrectionSupported)
-                Text("白平衡在胶片模拟之前完成；色温/色调修改需重新解码 RAW。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(DarkroomStyle.secondary)
+                if options.decoder == .coreImage {
+                    Text("白平衡在胶片模拟之前完成；色温/色调修改需重新解码 RAW。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                } else {
+                    Text("iOS 16 的系统 RAW 解码不支持此 RAF；已切换应用内 LibRaw，沿用相机白平衡。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DarkroomStyle.secondary)
+                }
+                }
             } else {
                 Button {
                     showingRAWFileImporter = true
@@ -1874,7 +1895,7 @@ struct EditorView: View {
                 .buttonStyle(.bordered)
                 .tint(DarkroomStyle.accent)
                 .disabled(model.isBusy || model.isRendering)
-                Text("RAF / DNG / NEF / ARW / CR3 等；以 iOS 系统支持的相机型号为准。")
+                Text("RAF / DNG / NEF / ARW / CR3 等；RAF 使用应用内兼容显影。")
                     .font(.system(size: 10))
                     .foregroundStyle(DarkroomStyle.secondary)
             }
@@ -1909,12 +1930,7 @@ struct EditorView: View {
                 .pickerStyle(.segmented)
 
                 VStack(spacing: 0) {
-                    if adjustmentGroup == .edge {
-                        MobileFilmEdgeEditor(
-                            settings: filmEdgeBinding,
-                            disabled: model.isBusy || model.isRendering
-                        )
-                    } else if adjustmentGroup == .geometry {
+                    if adjustmentGroup == .geometry {
                         PhotoGeometryControls(
                             geometry: photoGeometryBinding,
                             imageSize: model.cropEditingImage?.size ?? CGSize(width: 3, height: 2),
