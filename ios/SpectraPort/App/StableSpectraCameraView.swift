@@ -276,7 +276,8 @@ struct StableSpectraCameraView: View {
                         .foregroundStyle(.white.opacity(0.48))
                 }
             }
-            .frame(width: width - 24, minHeight: 34)
+            .frame(width: width - 24)
+            .frame(minHeight: 34)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(.black.opacity(0.42), in: Capsule())
