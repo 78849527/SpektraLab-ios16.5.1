@@ -24,6 +24,7 @@ final class EditorModel: ObservableObject {
     @Published var capturedFormat = "照片图库"
     @Published private(set) var rawOptions: RAWDecodeOptions?
     @Published private(set) var rawAsShot: RAWProbe?
+    @Published var rawImportError: String?
     @Published var lastElapsedMS: Double?
     @Published var exportLimit: ExportLimit = .safe
     @Published var exportPhase = ""
@@ -118,18 +119,19 @@ final class EditorModel: ObservableObject {
     func importRAWFile(_ url: URL) {
         guard !isBusy, !isRendering else { return }
         guard RawImageDeveloper.isRaw(filename: url.lastPathComponent) else {
-            status = "请从文件选择 RAF、DNG、NEF、ARW、CR2/CR3 等 RAW"
+            let message = "所选文件不是支持的 RAW。请选 RAF、DNG、NEF、ARW、CR2/CR3 等格式。"
+            status = message
+            rawImportError = message
             return
         }
+        rawImportError = nil
         isBusy = true
         status = "读取相机 RAW 和 As Shot 白平衡…"
         let hint = UTType(filenameExtension: url.pathExtension)?.identifier
         Task {
             do {
                 let payload = try await Task.detached(priority: .userInitiated) {
-                    let granted = url.startAccessingSecurityScopedResource()
-                    defer { if granted { url.stopAccessingSecurityScopedResource() } }
-                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    let data = try RawImageDeveloper.readFile(at: url)
                     let probe = try RawImageDeveloper.probe(data, hint: hint)
                     return (data, probe)
                 }.value
@@ -143,7 +145,9 @@ final class EditorModel: ObservableObject {
                 applySettings()
             } catch {
                 isBusy = false
-                status = "RAW 文件无法显影：" + error.localizedDescription
+                let message = "RAW 文件无法显影：" + error.localizedDescription
+                status = message
+                rawImportError = message
             }
         }
     }
@@ -2131,6 +2135,14 @@ struct EditorView: View {
                         .padding(.bottom, 2)
 
                     editorSections
+                        .alert("RAW 导入失败", isPresented: Binding(
+                            get: { model.rawImportError != nil },
+                            set: { if !$0 { model.rawImportError = nil } }
+                        )) {
+                            Button("好", role: .cancel) { model.rawImportError = nil }
+                        } message: {
+                            Text(model.rawImportError ?? "请检查所选文件后重试。")
+                        }
 
                     ScrollViewReader { chooser in
                         ScrollView(.vertical, showsIndicators: false) {
@@ -2284,7 +2296,7 @@ struct EditorView: View {
             }
             .fileImporter(
                 isPresented: $showingRAWFileImporter,
-                allowedContentTypes: [.rawImage, .data]
+                allowedContentTypes: [.item]
             ) { selected in
                 switch selected {
                 case let .success(url):
@@ -2293,7 +2305,12 @@ struct EditorView: View {
                     selectedTab = .film
                     adjustmentGroup = .camera
                 case let .failure(error):
-                    model.status = "文件选择失败：" + error.localizedDescription
+                    let nsError = error as NSError
+                    guard nsError.domain != NSCocoaErrorDomain ||
+                            nsError.code != NSUserCancelledError else { return }
+                    let message = "文件选择失败：" + error.localizedDescription
+                    model.status = message
+                    model.rawImportError = message
                 }
             }
             .fullScreenCover(isPresented: $showingCamera, onDismiss: {
