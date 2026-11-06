@@ -26,9 +26,9 @@ struct WorkflowStockCard: View {
         return text
     }
     private var packageColor: Color {
-        if isFuji { return Color(red: 0.16, green: 0.43, blue: 0.31) }
-        if isKodak { return Color(red: 0.86, green: 0.61, blue: 0.13) }
-        return Color(red: 0.39, green: 0.32, blue: 0.57)
+        if isFuji { return Color(red: 0.18, green: 0.34, blue: 0.29) }
+        if isKodak { return Color(red: 0.40, green: 0.25, blue: 0.24) }
+        return Color(red: 0.31, green: 0.29, blue: 0.40)
     }
 
     var body: some View {
