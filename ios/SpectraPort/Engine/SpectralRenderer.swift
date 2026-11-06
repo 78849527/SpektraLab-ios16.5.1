@@ -195,6 +195,7 @@ final class SpectralRenderer {
         defer { if let openReply { spk_string_free(openReply) } }
         let nativeEdge = filmEdge.needsComposite
         let delta = try settings.deltaJSON(striped: !nativeEdge,
+                                           inputCCTFDecoding: rawOptions == nil,
                                            filmEdge: filmEdge, geometry: geometry,
                                            inputSize: CGSize(width: CGFloat(frame.width), height: CGFloat(frame.height)),
                                            filmName: FilmCatalog.filmName(settings.filmStock))
@@ -359,7 +360,7 @@ final class SpectralRenderer {
         var openReply: UnsafeMutablePointer<CChar>?
         defer { if let openReply { spk_string_free(openReply) } }
         let delta = try settings.deltaJSON(
-            striped: false, filmEdge: filmEdge, geometry: geometry,
+            striped: false, inputCCTFDecoding: rawOptions == nil, filmEdge: filmEdge, geometry: geometry,
             inputSize: CGSize(width: CGFloat(width), height: CGFloat(height)),
             filmName: FilmCatalog.filmName(settings.filmStock))
         let opened: OpaquePointer? = floats.withUnsafeBufferPointer { buffer in
