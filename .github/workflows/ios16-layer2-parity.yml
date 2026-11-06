@@ -330,9 +330,14 @@ jobs:
           assert "RawImageDeveloper.develop(" in export
           assert "rawOptions: RAWDecodeOptions?" in ed
           assert "importRAWFile(_ url: URL)" in ed
-          assert "startAccessingSecurityScopedResource()" in ed
+          assert "RawImageDeveloper.readFile(at: url)" in ed
+          assert "static func readFile(at url: URL) throws -> Data" in developer
+          assert "startAccessingSecurityScopedResource()" in developer
+          assert "NSFileCoordinator(filePresenter: nil)" in developer
           assert "showingRAWFileImporter" in ed
-          assert "allowedContentTypes: [.rawImage, .data]" in ed
+          assert "allowedContentTypes: [.item]" in ed
+          assert ".alert(\"RAW 导入失败\"" in ed
+          assert "rawImportError = message" in ed
           assert "model.changeRAWOptions(p)" in ed
           assert "RAW 色温" in ed and "RAW 色调" in ed
           assert "photoID = UUID()" in ed
