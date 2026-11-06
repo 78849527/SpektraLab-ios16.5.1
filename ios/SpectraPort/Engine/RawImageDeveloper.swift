@@ -121,7 +121,7 @@ enum RawImageDeveloper {
                       filename: String? = nil) throws -> RAWProbe {
         // iOS 16 does not decode every compressed Fujifilm RAF variant.
         // Route RAF through the same pinned LibRaw decoder as the desktop app.
-        let isFujiRAF = (filename as NSString?)?.pathExtension.lowercased() == "raf"
+        let isFujiRAF = filename.map { ($0 as NSString).pathExtension.lowercased() == "raf" } ?? false
         if !isFujiRAF,
            let f = try? filter(data, options: RAWDecodeOptions(identifierHint: hint)),
            let image = f.outputImage {
@@ -231,10 +231,12 @@ enum RawImageDeveloper {
     private static func developWithLibRaw(_ data: Data, maxPixels: Int,
                                           maxEdge: Int?, softness: Double,
                                           context: CIContext, preview: Bool) throws -> Frame {
-        guard data.count <= 180_000_000, maxPixels > 0,
-              let linear = linearProPhoto,
-              let displaySpace = CGColorSpace(name: CGColorSpace.rommrgb) else {
+        guard data.count <= 180_000_000, maxPixels > 0 else {
             throw RAWDevelopmentError.unsafeFileSize
+        }
+        guard let linear = linearProPhoto,
+              let displaySpace = CGColorSpace(name: CGColorSpace.rommrgb) else {
+            throw RAWDevelopmentError.noColorSpace
         }
         return try withTemporaryRAF(data) { url in
             let error = UnsafeMutablePointer<CChar>.allocate(capacity: 1024)
