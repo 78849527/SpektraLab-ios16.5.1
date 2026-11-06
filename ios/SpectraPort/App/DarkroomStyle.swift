@@ -348,7 +348,7 @@ private struct CompactFineSlider: UIViewRepresentable {
                               width: diameter, height: diameter)
             UIColor(red: 0.95, green: 0.93, blue: 0.88, alpha: 1).setFill()
             UIBezierPath(ovalIn: rect).fill()
-            UIColor(red: 0.62, green: 0.49, blue: 0.33, alpha: 0.9).setStroke()
+            UIColor(red: 0.36, green: 0.69, blue: 0.74, alpha: 0.95).setStroke()
             let edge = UIBezierPath(ovalIn: rect.insetBy(dx: 0.45, dy: 0.45))
             edge.lineWidth = 0.8
             edge.stroke()
@@ -362,7 +362,7 @@ private struct CompactFineSlider: UIViewRepresentable {
         slider.minimumTrackTintColor = .clear
         slider.maximumTrackTintColor = .clear
         slider.setMinimumTrackImage(Self.trackImage(
-            UIColor(red: 0.91, green: 0.74, blue: 0.48, alpha: 1)), for: .normal)
+            UIColor(red: 0.36, green: 0.69, blue: 0.74, alpha: 1)), for: .normal)
         slider.setMaximumTrackImage(Self.trackImage(
             UIColor(white: 0.54, alpha: 0.64)), for: .normal)
         slider.setThumbImage(Self.thumbImage(diameter: 10), for: .normal)
