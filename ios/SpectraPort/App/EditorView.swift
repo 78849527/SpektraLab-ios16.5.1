@@ -576,7 +576,10 @@ struct EditorView: View {
     @State private var darkroomExpanded = false
     @State private var presetsExpanded = false
     @State private var exportExpanded = false
-    @State private var selectedTab: EditorTab = .adjust
+    @State private var selectedTab: EditorTab = .film
+    @State private var showingPendingWorkflowFeature = false
+    @State private var pendingWorkflowFeatureTitle = ""
+    @State private var pendingWorkflowFeatureDescription = ""
     @State private var activeSliderReadout: String?
     @State private var adjustmentGroup: AdjustmentGroup = .camera
     @State private var gradeSubsection: GradeSubsection = .basic
@@ -1056,73 +1059,77 @@ struct EditorView: View {
             .stroke(DarkroomStyle.line, lineWidth: 1))
     }
 
+    /// The screenshot-inspired home selector shows all three choices in one
+    /// vertical scroll, with small orange-marked swipeable cards.
     private var filmSection: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 13) {
-                DarkroomSectionTitle(number: "01", title: "胶片", subtitle: "左右滑动选择")
-
-                HStack(spacing: 8) {
-                    Image(systemName: "film.stack")
-                        .foregroundStyle(DarkroomStyle.accent)
-                    Text(activeFilmName)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DarkroomStyle.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("胶片")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(DarkroomStyle.primary)
+                        Text(activeFilmName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
                     Menu {
+                        ForEach(FilmBrowseFilter.allCases, id: \.self) { option in
+                            Button {
+                                filmFilter = option
+                            } label: {
+                                if filmFilter == option {
+                                    Label(option.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Text(option.rawValue)
+                                }
+                            }
+                        }
+                        Divider()
                         ForEach(FilmCatalog.films) { stock in
                             Button(stock.name) { model.selectFilm(stock.id) }
                         }
                     } label: {
-                        Label("列表", systemImage: "chevron.down")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DarkroomStyle.accent)
+                        Image(systemName: "line.3.horizontal.decrease")
+                            .font(.system(size: 15))
+                            .frame(width: 30, height: 38)
                     }
-                    .disabled(model.isBusy)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) {
-                        ForEach(FilmBrowseFilter.allCases, id: \.self) { filter in
-                            DarkroomChip(
-                                title: filter.rawValue, selected: filmFilter == filter
-                            ) {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    filmFilter = filter
-                                }
-                            }
-                        }
-                    }
+                    .accessibilityLabel("胶片筛选与列表")
+                    .disabled(model.isBusy || model.isRendering)
+                    workflowTuneButton("胶片细调", group: .camera)
                 }
 
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 10) {
+                        LazyHStack(spacing: 9) {
                             ForEach(filteredFilms) { stock in
-                                FilmStockCard(
-                                    name: stock.name,
-                                    selected: stock.id == model.filmID
+                                WorkflowStockCard(
+                                    stockName: stock.name,
+                                    selected: model.filmID == stock.id,
+                                    isPaper: false
                                 ) {
-                                    guard !model.isBusy else { return }
+                                    guard !model.isBusy && !model.isRendering else { return }
                                     model.selectFilm(stock.id)
-                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
                                         reader.scrollTo(stock.id, anchor: .center)
                                     }
                                 }
                                 .id(stock.id)
-                                .disabled(model.isBusy)
+                                .disabled(model.isBusy || model.isRendering)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.top, 7)
+                        .padding(.bottom, 3)
                     }
                     .onAppear {
                         reader.scrollTo(model.filmID, anchor: .center)
                     }
-                    .onChange(of: model.filmID) { newValue in
-                        if filteredFilms.contains(where: { $0.id == newValue }) {
+                    .onChange(of: model.filmID) { id in
+                        if filteredFilms.contains(where: { $0.id == id }) {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                reader.scrollTo(newValue, anchor: .center)
+                                reader.scrollTo(id, anchor: .center)
                             }
                         }
                     }
@@ -1132,89 +1139,84 @@ struct EditorView: View {
                         }
                     }
                 }
-                Text("选中胶片后，将自动匹配原版配置推荐的相纸；可在下方手动更换。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(DarkroomStyle.secondary)
             }
         }
+        .id("workflow-film")
     }
 
     private var paperSection: some View {
         DarkroomPanel {
-            VStack(alignment: .leading, spacing: 13) {
-                DarkroomSectionTitle(number: "02", title: "相纸", subtitle: "左右滑动选择")
-
-                HStack(spacing: 8) {
-                    Image(systemName: "square.stack.3d.up")
-                        .foregroundStyle(DarkroomStyle.accent)
-                    Text(activePaperName)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DarkroomStyle.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("相纸")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(DarkroomStyle.primary)
+                        Text(activePaperName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
                     Menu {
-                        ForEach(FilmCatalog.papers) { stock in
+                        ForEach(PaperBrowseFilter.allCases, id: \.self) { option in
                             Button {
-                                guard !model.isBusy else { return }
-                                model.paperID = stock.id
+                                paperFilter = option
                             } label: {
-                                if stock.id == model.paperID {
-                                    Label(stock.name, systemImage: "checkmark")
+                                if paperFilter == option {
+                                    Label(option.rawValue, systemImage: "checkmark")
                                 } else {
-                                    Text(stock.name)
+                                    Text(option.rawValue)
                                 }
+                            }
+                        }
+                        Divider()
+                        ForEach(FilmCatalog.papers) { stock in
+                            Button(stock.name) {
+                                guard !model.isBusy && !model.isRendering else { return }
+                                model.paperID = stock.id
                             }
                         }
                     } label: {
-                        Label("列表", systemImage: "chevron.down")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DarkroomStyle.accent)
+                        Image(systemName: "line.3.horizontal.decrease")
+                            .font(.system(size: 15))
+                            .frame(width: 30, height: 38)
                     }
-                    .disabled(model.isBusy)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) {
-                        ForEach(PaperBrowseFilter.allCases, id: \.self) { filter in
-                            DarkroomChip(title: filter.rawValue,
-                                         selected: paperFilter == filter) {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    paperFilter = filter
-                                }
-                            }
-                        }
-                    }
+                    .accessibilityLabel("相纸筛选与列表")
+                    .disabled(model.isBusy || model.isRendering)
+                    workflowTuneButton("相纸细调", group: .print)
                 }
 
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 10) {
+                        LazyHStack(spacing: 9) {
                             ForEach(filteredPapers) { stock in
-                                FilmStockCard(
-                                    name: stock.name,
-                                    selected: stock.id == model.paperID,
-                                    kind: "PHOTO PAPER"
+                                WorkflowStockCard(
+                                    stockName: stock.name,
+                                    selected: model.paperID == stock.id,
+                                    isPaper: true
                                 ) {
-                                    guard !model.isBusy, stock.id != model.paperID else { return }
+                                    guard !model.isBusy && !model.isRendering,
+                                          stock.id != model.paperID else { return }
                                     model.paperID = stock.id
-                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
                                         reader.scrollTo(stock.id, anchor: .center)
                                     }
                                 }
                                 .id(stock.id)
-                                .disabled(model.isBusy)
+                                .disabled(model.isBusy || model.isRendering)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.top, 7)
+                        .padding(.bottom, 3)
                     }
                     .onAppear {
                         reader.scrollTo(model.paperID, anchor: .center)
                     }
-                    .onChange(of: model.paperID) { newValue in
-                        if filteredPapers.contains(where: { $0.id == newValue }) {
+                    .onChange(of: model.paperID) { id in
+                        if filteredPapers.contains(where: { $0.id == id }) {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                reader.scrollTo(newValue, anchor: .center)
+                                reader.scrollTo(id, anchor: .center)
                             }
                         }
                     }
@@ -1224,11 +1226,138 @@ struct EditorView: View {
                         }
                     }
                 }
-
-                Text("使用原版测量相纸配置；选中后自动实时冲印。也可点击右上角「列表」选择。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(DarkroomStyle.secondary)
             }
+        }
+        .id("workflow-paper")
+    }
+
+    private func workflowTuneButton(_ label: String,
+                                    group: AdjustmentGroup) -> some View {
+        Button {
+            adjustmentGroup = group
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedTab = .adjust
+            }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(DarkroomStyle.accent)
+                .frame(width: 34, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var filmEdgeChoiceSection: some View {
+        DarkroomPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 5) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("片边 · 日期")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(DarkroomStyle.primary)
+                        Text(filmEdgeWorkflowSummary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 1)
+                    workflowTuneButton("片边细调", group: .edge)
+                    Button {
+                        showUnportedWorkflowFeature(
+                            "日期后背",
+                            description: "日期后背尚未移植；当前可在片边细调中设置胶片片号。")
+                    } label: {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 15))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                            .frame(width: 29, height: 38)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("日期后背，待移植")
+                    Button {
+                        showUnportedWorkflowFeature(
+                            "签名",
+                            description: "签名渲染尚未移植；后续将支持签名样式及输出位置。")
+                    } label: {
+                        Image(systemName: "signature")
+                            .font(.system(size: 17))
+                            .foregroundStyle(DarkroomStyle.secondary)
+                            .frame(width: 29, height: 38)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("签名，待移植")
+                }
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 9) {
+                            ForEach(WorkflowFilmEdgeChoice.allCases) { option in
+                                WorkflowFilmEdgeCard(
+                                    option: option,
+                                    selected: WorkflowFilmEdgeChoice.current(model.filmEdge) == option
+                                ) {
+                                    guard !model.isBusy && !model.isRendering else { return }
+                                    if option == .burnished {
+                                        showUnportedWorkflowFeature(
+                                            "打磨片夹",
+                                            description: "打磨片夹的物理边缘和扫描纹理尚未移植；目前可以使用 135 或归档片边。")
+                                    } else if option == .more {
+                                        adjustmentGroup = .edge
+                                        selectedTab = .adjust
+                                    } else {
+                                        model.setFilmEdge(option.applying(to: model.filmEdge))
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            reader.scrollTo(option.id, anchor: .center)
+                                        }
+                                    }
+                                }
+                                .id(option.id)
+                                .disabled(model.isBusy || model.isRendering)
+                            }
+                        }
+                        .padding(.top, 7)
+                        .padding(.bottom, 3)
+                    }
+                    .onAppear {
+                        reader.scrollTo(
+                            WorkflowFilmEdgeChoice.current(model.filmEdge).id,
+                            anchor: .center
+                        )
+                    }
+                    .onChange(of: model.filmEdge) { next in
+                        let option = WorkflowFilmEdgeChoice.current(next)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            reader.scrollTo(option.id, anchor: .center)
+                        }
+                    }
+                }
+            }
+        }
+        .id("workflow-edge")
+    }
+
+    private var filmEdgeWorkflowSummary: String {
+        let edge = model.filmEdge.enabled
+            ? (model.filmEdge.view == .filed ? "归档页" :
+               model.filmEdge.format.label)
+            : "无片边"
+        return edge + " · 日期关闭 · 签名关闭"
+    }
+
+    private func showUnportedWorkflowFeature(_ title: String,
+                                            description: String) {
+        pendingWorkflowFeatureTitle = title
+        pendingWorkflowFeatureDescription = description
+        showingPendingWorkflowFeature = true
+    }
+
+    private var workflowSelectionPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            filmSection
+            paperSection
+            filmEdgeChoiceSection
         }
     }
 
@@ -1898,8 +2027,7 @@ struct EditorView: View {
     @ViewBuilder
     private var activePanel: some View {
         switch selectedTab {
-        case .film: filmSection
-        case .paper: paperSection
+        case .film, .paper: workflowSelectionPanel
         case .adjust: quickAdjustmentPanel
         case .grade: desktopGradePanel
         case .presets:
@@ -1935,18 +2063,34 @@ struct EditorView: View {
 
                     editorSections
 
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            activePanel
-                            statusSection
+                    ScrollViewReader { chooser in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                activePanel
+                                statusSection
+                            }
+                            .padding(.horizontal, 13)
+                            .padding(.bottom, 18)
                         }
-                        .padding(.horizontal, 13)
-                        .padding(.bottom, 18)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(DarkroomStyle.background)
-                    .onPreferenceChange(CompactSliderReadoutKey.self) { readout in
-                        activeSliderReadout = readout
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(DarkroomStyle.background)
+                        .onChange(of: selectedTab) { tab in
+                            if tab == .film || tab == .paper {
+                                // Preserve the nine-item menu: both shortcuts
+                                // expose the same three-stack chooser, but
+                                // "相纸" lands on the second rail.
+                                let destination = tab == .paper
+                                    ? "workflow-paper" : "workflow-film"
+                                DispatchQueue.main.async {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        chooser.scrollTo(destination, anchor: .top)
+                                    }
+                                }
+                            }
+                        }
+                        .onPreferenceChange(CompactSliderReadoutKey.self) { readout in
+                            activeSliderReadout = readout
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1958,7 +2102,7 @@ struct EditorView: View {
                 clearInlineHighResolution()
                 photoSaveFeedback = ""
                 model.importPhoto($0)
-                selectedTab = .adjust
+                selectedTab = .film
             }
             .onChange(of: model.photoSelectionVersion) { _ in
                 clearInlineHighResolution()
@@ -2013,6 +2157,12 @@ struct EditorView: View {
                     }
                 }
             }
+            .alert(pendingWorkflowFeatureTitle,
+                   isPresented: $showingPendingWorkflowFeature) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(pendingWorkflowFeatureDescription)
+            }
             .alert("保存自定义预设", isPresented: $showSavePreset) {
                 TextField("预设名称", text: $newPresetName)
                 Button("保存") {
@@ -2040,7 +2190,7 @@ struct EditorView: View {
                 case let .success(url):
                     clearInlineHighResolution()
                     model.importRAWFile(url)
-                    selectedTab = .adjust
+                    selectedTab = .film
                     adjustmentGroup = .camera
                 case let .failure(error):
                     model.status = "文件选择失败：" + error.localizedDescription
@@ -2050,7 +2200,7 @@ struct EditorView: View {
                 if let capture = pendingCapture {
                     pendingCapture = nil
                     model.importCameraCapture(capture)
-                    selectedTab = .adjust
+                    selectedTab = .film
                 }
             }) {
                 StableSpectraCameraView(
