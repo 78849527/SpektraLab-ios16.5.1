@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 /// All entries are read from the upstream measured profile JSON shipped with
@@ -120,32 +119,9 @@ struct FilmSettings: Equatable, Codable {
         softness == other.softness
     }
 
-    func deltaJSON(striped: Bool = false,
-                   filmEdge: MobileFilmEdgeSettings = MobileFilmEdgeSettings(),
-                   geometry: PhotoGeometry = .identity,
-                   inputSize: CGSize = .zero,
-                   filmName: String = "") throws -> String {
-        // Native RFC-031/032 parameters: crop and imprint are part of the
-        // negative exposure, before printing. Keep these names in sync with
-        // engine/src/core/params.cpp.
-        let nativeGeometry = filmEdge.needsComposite ? geometry : .identity
-        var crop = PhotoGeometry.bounded(nativeGeometry.crop)
-        if filmEdge.enabled && inputSize.width > 0 && inputSize.height > 0 {
-            var imageAspect = inputSize.width / inputSize.height
-            if nativeGeometry.quarterTurns % 2 != 0 { imageAspect = 1 / imageAspect }
-            let gate = filmEdge.format.gateMM
-            let targetAspect = max(gate.width, gate.height) / min(gate.width, gate.height)
-            let cropAspect = imageAspect * crop.width / crop.height
-            if cropAspect > targetAspect {
-                let width = crop.width * targetAspect / cropAspect
-                crop.origin.x += (crop.width - width) / 2
-                crop.size.width = width
-            } else if cropAspect < targetAspect {
-                let height = crop.height * cropAspect / targetAspect
-                crop.origin.y += (crop.height - height) / 2
-                crop.size.height = height
-            }
-        }
+    func deltaJSON(striped: Bool = false) throws -> String {
+        // These exact field names and ranges come from engine/src/core/params.cpp.
+        // Keep colour-management fields identical to the successful v0.2.1 path.
         var values: [String: Any] = [
             "input_color_space": "ProPhoto RGB",
             "input_cctf_decoding": true,
@@ -159,54 +135,15 @@ struct FilmSettings: Equatable, Codable {
             "halation_active": halationAmount > 0,
             "print_exposure": printExposure,
             "m_filter_shift": magentaShift,
-            "y_filter_shift": yellowShift,
-            "geometry_crop_x": Double(crop.minX),
-            "geometry_crop_y": Double(crop.minY),
-            "geometry_crop_w": Double(crop.width),
-            "geometry_crop_h": Double(crop.height),
-            "geometry_quarter_turns": nativeGeometry.quarterTurns,
-            "geometry_rotation_deg": nativeGeometry.straightenDegrees,
-            "geometry_flip_h": nativeGeometry.flipHorizontal,
-            "geometry_flip_v": nativeGeometry.flipVertical,
-            "overscan_active": filmEdge.enabled,
-            "overscan_format": filmEdge.format.rawValue,
-            "overscan_mode": filmEdge.view == .strip ? "strip" : "filed",
-            "overscan_gate": filmEdge.gate.engineValue,
-            "overscan_holes": filmEdge.holes == .white ? "white" : "black",
-            "overscan_frame_number": filmEdge.frameNumber,
-            "overscan_camera_seed": 1,
-            "overscan_frame_seed": 1,
-            "overscan_fog": filmEdge.enabled ? filmEdge.fog : 0,
-            "overscan_leaks": filmEdge.enabled ? filmEdge.leaks : 0,
-            "overscan_edge_text": filmEdge.edgeText.isEmpty ? filmName : filmEdge.edgeText,
-            "overscan_f_number": 0.0,
-            "overscan_carrier": "none",
-            "overscan_pair": false,
-            "date_imprint_active": filmEdge.dateBack.enabled,
-            "date_imprint_text": filmEdge.dateBack.face == .data ? "" : filmEdge.dateBack.printedText,
-            "date_imprint_data_text": filmEdge.dateBack.withData ? filmEdge.dateBack.dataText : "",
-            "date_imprint_style": filmEdge.dateBack.face == .lcd ? "lcd" :
-                (filmEdge.dateBack.face == .dots ? "dots" : "data"),
-            "date_imprint_placement": filmEdge.dateBack.placement == .rebate && filmEdge.enabled ? "rebate" : "frame",
-            "date_imprint_corner": filmEdge.dateBack.corner.engineValue,
-            "date_imprint_inset_x": filmEdge.dateBack.insetXMM,
-            "date_imprint_inset_y": filmEdge.dateBack.insetYMM,
-            "date_imprint_size": filmEdge.dateBack.size,
-            "date_imprint_ev": filmEdge.dateBack.brightnessEV
+            "y_filter_shift": yellowShift
         ]
-        if striped && !filmEdge.needsComposite {
-            values["striped"] = true
-            values["strip_rows"] = 0
-        } else {
-            values["striped"] = false
-        }
+        if striped { values["striped"] = true; values["strip_rows"] = 0 }
         let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
         guard let json = String(data: data, encoding: .utf8) else {
             throw PortError.message("无法编码胶片参数")
         }
         return json
     }
-
     /// Only send fields that changed. Omitting film_stock and print_stock lets
     /// spk_set_params retain the measured profile and cached negative for a
     /// print-only edit, instead of needlessly rebuilding the whole session.
