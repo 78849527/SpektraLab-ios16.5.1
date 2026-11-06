@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// All entries are read from the upstream measured profile JSON shipped with
