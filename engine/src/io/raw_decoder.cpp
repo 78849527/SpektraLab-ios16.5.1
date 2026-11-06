@@ -208,12 +208,12 @@ protected:
 }  // namespace
 
 bool decode_raw_compatible(const std::filesystem::path& source,
-                           DecodedRaw& out, std::string& error) {
-    return decode_raw_compatible(source, nullptr, out, error);
+                           DecodedRaw& out, std::string& error, bool half_size) {
+    return decode_raw_compatible(source, nullptr, out, error, half_size);
 }
 
 bool decode_raw_compatible(const std::filesystem::path& source, const std::array<float, 4>* user_mul,
-                           DecodedRaw& out, std::string& error) {
+                           DecodedRaw& out, std::string& error, bool half_size) {
     error.clear();
     const auto total_start = Clock::now();
     try {
@@ -224,6 +224,7 @@ bool decode_raw_compatible(const std::filesystem::path& source, const std::array
         // LibRaw carries substantial metadata; keep it off the Windows stack.
         auto raw = std::make_unique<LibRaw>(LIBRAW_OPTIONS_NO_DATAERR_CALLBACK);
         configure_compatible(raw->imgdata.params);
+        raw->imgdata.params.half_size = half_size ? 1 : 0;
         if (user_mul) {
             // A caller-chosen white balance (the host's Temperature/Tint):
             // LibRaw's own user multipliers replace the as-shot ones, through
