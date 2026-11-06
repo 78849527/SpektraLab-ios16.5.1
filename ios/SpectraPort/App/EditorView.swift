@@ -1477,12 +1477,14 @@ struct EditorView: View {
                         DarkroomControlRow(
                             label: "胶片颗粒", value: $model.grainAmount,
                             range: 0...2, step: 0.1, suffix: "×",
-                            disabled: model.isBusy
+                            disabled: model.isBusy,
+                            resetValue: 1
                         )
                         DarkroomControlRow(
                             label: "光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
-                            disabled: model.isBusy
+                            disabled: model.isBusy,
+                            resetValue: 1
                         )
                     }
                     .padding(.top, 16)
@@ -1863,7 +1865,8 @@ struct EditorView: View {
                                 model.changeRAWOptions(p)
                             }),
                         range: 2000...12000, step: 100, suffix: " K",
-                        disabled: model.isBusy
+                        disabled: model.isBusy,
+                        resetValue: asShot.temperature
                     )
                     DarkroomControlRow(
                         label: "RAW 色调",
@@ -1875,7 +1878,8 @@ struct EditorView: View {
                                 model.changeRAWOptions(p)
                             }),
                         range: -150...150, step: 1, suffix: "",
-                        disabled: model.isBusy
+                        disabled: model.isBusy,
+                        resetValue: asShot.tint
                     )
                 }
                 Toggle("RAW 镜头修正", isOn: Binding(
@@ -1960,12 +1964,14 @@ struct EditorView: View {
                         DarkroomControlRow(
                             label: "胶片颗粒", value: $model.grainAmount,
                             range: 0...2, step: 0.1, suffix: "×",
-                            disabled: model.isBusy
+                            disabled: model.isBusy,
+                            resetValue: 1
                         )
                         DarkroomControlRow(
                             label: "反射光晕面积", value: $model.halationAmount,
                             range: 0...3, step: 0.1, suffix: "×",
-                            disabled: model.isBusy
+                            disabled: model.isBusy,
+                            resetValue: 1
                         )
                         Text("0 = 完全关闭光晕处理；1 = 胶片默认反射面积。普通画面效果较弱，夜间点光源边缘更明显。")
                             .font(.system(size: 10))
@@ -2100,7 +2106,8 @@ struct EditorView: View {
                 DarkroomControlRow(
                     label: "暗角范围", value: $model.grade.vignette.midpoint,
                     range: 0...100, step: 1, suffix: "",
-                    disabled: model.isBusy
+                    disabled: model.isBusy,
+                    resetValue: 50
                 )
                 } else if gradeSubsection == .curves {
                     MobileCurveEditor(curves: $model.grade.curves)
