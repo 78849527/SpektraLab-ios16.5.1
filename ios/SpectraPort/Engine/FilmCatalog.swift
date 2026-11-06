@@ -127,10 +127,11 @@ struct FilmSettings: Equatable, Codable {
         // Native RFC-031/032 parameters: crop and imprint are part of the
         // negative exposure, before printing. Keep these names in sync with
         // engine/src/core/params.cpp.
-        var crop = PhotoGeometry.bounded(geometry.crop)
+        let nativeGeometry = filmEdge.needsComposite ? geometry : .identity
+        var crop = PhotoGeometry.bounded(nativeGeometry.crop)
         if filmEdge.enabled && inputSize.width > 0 && inputSize.height > 0 {
             var imageAspect = inputSize.width / inputSize.height
-            if geometry.quarterTurns % 2 != 0 { imageAspect = 1 / imageAspect }
+            if nativeGeometry.quarterTurns % 2 != 0 { imageAspect = 1 / imageAspect }
             let gate = filmEdge.format.gateMM
             let targetAspect = max(gate.width, gate.height) / min(gate.width, gate.height)
             let cropAspect = imageAspect * crop.width / crop.height
@@ -162,10 +163,10 @@ struct FilmSettings: Equatable, Codable {
             "geometry_crop_y": Double(crop.minY),
             "geometry_crop_w": Double(crop.width),
             "geometry_crop_h": Double(crop.height),
-            "geometry_quarter_turns": geometry.quarterTurns,
-            "geometry_rotation_deg": geometry.straightenDegrees,
-            "geometry_flip_h": geometry.flipHorizontal,
-            "geometry_flip_v": geometry.flipVertical,
+            "geometry_quarter_turns": nativeGeometry.quarterTurns,
+            "geometry_rotation_deg": nativeGeometry.straightenDegrees,
+            "geometry_flip_h": nativeGeometry.flipHorizontal,
+            "geometry_flip_v": nativeGeometry.flipVertical,
             "overscan_active": filmEdge.enabled,
             "overscan_format": filmEdge.format.rawValue,
             "overscan_mode": filmEdge.view == .strip ? "strip" : "filed",
