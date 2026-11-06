@@ -13,12 +13,14 @@ private enum CameraFrameGuide: String, CaseIterable, Identifiable {
     case fourThree = "4:3"
     case threeTwo = "3:2"
     case square = "1:1"
+    case openGate = "OPEN GATE"
     var id: String { rawValue }
-    var portraitAspectRatio: CGFloat {
+    var portraitAspectRatio: CGFloat? {
         switch self {
         case .fourThree: return 3.0 / 4.0
         case .threeTwo: return 2.0 / 3.0
         case .square: return 1.0
+        case .openGate: return nil
         }
     }
 }
@@ -38,7 +40,10 @@ struct StableSpectraCameraView: View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
-                CameraPreviewSurface(session: camera.session) { devicePoint, viewPoint in
+                CameraPreviewSurface(
+                    session: camera.session,
+                    isOpenGate: frameGuide == .openGate
+                ) { devicePoint, viewPoint in
                     camera.focus(at: devicePoint)
                     focusToken = UUID()
                     let token = focusToken
@@ -49,9 +54,11 @@ struct StableSpectraCameraView: View {
                     }
                 }
                 .ignoresSafeArea()
-                CameraCompositionGuide(aspectRatio: frameGuide.portraitAspectRatio)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+                if let guideRatio = frameGuide.portraitAspectRatio {
+                    CameraCompositionGuide(aspectRatio: guideRatio)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                }
                 if let focusMarker {
                     FocusConfirmationMark()
                         .position(focusMarker)
@@ -181,8 +188,10 @@ struct StableSpectraCameraView: View {
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) { frameGuide = option }
                     } label: {
-                        Text(option.rawValue)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        Text(option == .openGate ? "OPEN GATE\n全画幅" : option.rawValue)
+                            .font(.system(size: option == .openGate ? 9 : 12, weight: .semibold, design: .rounded))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(1)
                             .foregroundStyle(frameGuide == option ? .black : .white)
                             .frame(maxWidth: .infinity, minHeight: 30)
                             .background(
@@ -412,18 +421,20 @@ private struct FocusConfirmationMark: View {
 
 private struct CameraPreviewSurface: UIViewRepresentable {
     let session: AVCaptureSession
+    let isOpenGate: Bool
     let onFocusTap: (CGPoint, CGPoint) -> Void
 
     func makeUIView(context: Context) -> CameraPreviewHostView {
         let view = CameraPreviewHostView()
         view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.videoGravity = isOpenGate ? .resizeAspect : .resizeAspectFill
         view.onFocusTap = onFocusTap
         return view
     }
 
     func updateUIView(_ view: CameraPreviewHostView, context: Context) {
         if view.previewLayer.session !== session { view.previewLayer.session = session }
+        view.previewLayer.videoGravity = isOpenGate ? .resizeAspect : .resizeAspectFill
         if let connection = view.previewLayer.connection,
            connection.isVideoOrientationSupported {
             connection.videoOrientation = .portrait
@@ -487,6 +498,7 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
     private var whiteBalanceLockState = false
     private var configured = false
     private var captureCompletion: ((Result<Data, Error>) -> Void)?
+    private var activePhotoDimensions: CMVideoDimensions?
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -549,6 +561,7 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
             self.session.addInput(nextInput)
             self.activeInput = nextInput
             self.activeDevice = nextDevice
+            self.configureMaximumPhotoDimensions(for: nextDevice)
             self.session.commitConfiguration()
             self.refreshRawCapability()
             self.whiteBalanceLockState = false
@@ -651,6 +664,9 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                 settings = AVCapturePhotoSettings()
                 self.captureUsesRAW = false
             }
+            if let dimensions = self.activePhotoDimensions {
+                settings.maxPhotoDimensions = dimensions
+            }
             settings.flashMode = self.flashEnabled && device.hasFlash ? .on : .off
             if let connection = self.photoOutput.connection(with: .video),
                connection.isVideoOrientationSupported {
@@ -686,11 +702,10 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
                     }
                     self.session.addInput(input)
                     self.session.addOutput(self.photoOutput)
-                    self.photoOutput.isHighResolutionCaptureEnabled = true
                     if self.photoOutput.isAppleProRAWSupported {
                         self.photoOutput.isAppleProRAWEnabled = true
                     }
-                    self.photoOutput.isHighResolutionCaptureEnabled = true
+                    self.configureMaximumPhotoDimensions(for: device)
                     self.activeDevice = device
                     self.activeInput = input
                     self.session.commitConfiguration()
@@ -715,6 +730,17 @@ private final class SpectraCaptureController: NSObject, ObservableObject,
             }
             self.session.startRunning()
         }
+    }
+
+    private func configureMaximumPhotoDimensions(for device: AVCaptureDevice) {
+        guard let largest = device.activeFormat.supportedMaxPhotoDimensions.max(by: {
+            Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height)
+        }) else {
+            activePhotoDimensions = nil
+            return
+        }
+        photoOutput.maxPhotoDimensions = largest
+        activePhotoDimensions = largest
     }
 
     private func refreshRawCapability() {
