@@ -43,6 +43,8 @@ final class EditorModel: ObservableObject {
     @Published var masks: [EditMask] = []
     @Published private(set) var photoGeometry = PhotoGeometry.identity
     @Published private(set) var cropEditingImage: UIImage?
+    @Published private(set) var framedProcessed: UIImage?
+    @Published private(set) var filmEdge = MobileFilmEdgeSettings()
     @Published private(set) var unframedProcessed: UIImage?
     private var unframedOriginal: UIImage?
 
@@ -59,6 +61,35 @@ final class EditorModel: ObservableObject {
     var onSuccessfulRender: ((FilmSettings) -> Void)?
 
     var currentSettings: FilmSettings { snapshot() }
+
+    /// Independent film-edge output. Original film, curves, RAW and local
+    /// mask coordinates are never modified when these controls change.
+    private func refreshFilmEdgePreview() {
+        guard filmEdge.enabled, let processed else {
+            framedProcessed = nil
+            return
+        }
+        do {
+            framedProcessed = try MobileFilmEdgeRenderer.preview(
+                processed, settings: filmEdge,
+                filmName: FilmCatalog.filmName(filmID))
+        } catch {
+            framedProcessed = nil
+            status = "片边预览无法生成：" + error.localizedDescription
+        }
+    }
+
+    func setFilmEdge(_ value: MobileFilmEdgeSettings) {
+        guard !isBusy && !isRendering else { return }
+        let next = value.normalized()
+        guard next != filmEdge else { return }
+        filmEdge = next
+        refreshFilmEdgePreview()
+        previewSequence += 1
+        if !isDirty {
+            status = filmEdge.enabled ? "片边已应用到预览和高清导出" : "已关闭片边，保留原图"
+        }
+    }
 
     /// RAW WB lives upstream of physical film simulation and is never stored
     /// inside reusable film/paper presets. Invalidate native photo cache.
@@ -118,6 +149,7 @@ final class EditorModel: ObservableObject {
                     full, geometry: next, onlyOrientation: true)
             }
             processed = PhotoGeometryPreview.render(full, geometry: next)
+            refreshFilmEdgePreview()
         }
         if let original = unframedOriginal {
             self.original = PhotoGeometryPreview.render(original, geometry: next)
@@ -246,6 +278,7 @@ final class EditorModel: ObservableObject {
                         photo.original, geometry: self.photoGeometry)
                     self.processed = PhotoGeometryPreview.render(
                         photo.processed, geometry: self.photoGeometry)
+                    self.refreshFilmEdgePreview()
                     self.lastElapsedMS = photo.elapsedMS
                     self.lastParametersVerified = photo.parametersVerified
                     self.previewSequence += 1
@@ -341,6 +374,7 @@ final class EditorModel: ObservableObject {
         unframedOriginal = nil
         unframedProcessed = nil
         cropEditingImage = nil
+        framedProcessed = nil
         photoGeometry = .identity
         previousProcessed = nil
         compare = false
@@ -394,9 +428,11 @@ final class EditorModel: ObservableObject {
         let settings = snapshot()
         let geometry = photoGeometry
         let rawAtExport = rawOptions
+        let edgeAtExport = filmEdge
         renderer.exportOriginal(
             data: data, settings: settings, format: format,
             geometry: geometry, rawOptions: rawAtExport,
+            filmEdge: edgeAtExport,
             limit: limitOverride ?? exportLimit,
             progress: { [weak self] stage in
                 self?.exportPhase = stage
@@ -483,6 +519,7 @@ private enum AdjustmentGroup: String, CaseIterable {
     case camera = "拍摄与胶片"
     case print = "暗房冲印"
     case geometry = "裁剪"
+    case edge = "片边"
 }
 
 private enum PaperBrowseFilter: String, CaseIterable {
@@ -555,6 +592,11 @@ struct EditorView: View {
     private var photoGeometryBinding: Binding<PhotoGeometry> {
         Binding(get: { model.photoGeometry },
                 set: { model.setPhotoGeometry($0) })
+    }
+
+    private var filmEdgeBinding: Binding<MobileFilmEdgeSettings> {
+        Binding(get: { model.filmEdge },
+                set: { model.setFilmEdge($0) })
     }
 
     private var editingMaskOnPhoto: Bool {
@@ -714,7 +756,8 @@ struct EditorView: View {
     }
 
     private func exportPreview(_ format: PreviewExporter.Format) {
-        guard let image = model.processed, canExport else {
+        guard let image = (model.framedProcessed ?? model.processed),
+              canExport else {
             model.status = "请先应用全部设置，然后再导出"
             return
         }
@@ -834,7 +877,8 @@ struct EditorView: View {
                 ? model.original
                 : (showPreviousFilm ? model.previousProcessed
                     : (editingCropOnPhoto ? model.cropEditingImage
-                        : model.processed)) {
+                        : (editingMaskOnPhoto ? model.processed :
+                           (model.framedProcessed ?? model.processed)))) {
                 GeometryReader { frame in
                     if editingCropOnPhoto {
                         PhotoCropCanvas(
@@ -1665,7 +1709,12 @@ struct EditorView: View {
                 .pickerStyle(.segmented)
 
                 VStack(spacing: 0) {
-                    if adjustmentGroup == .geometry {
+                    if adjustmentGroup == .edge {
+                        MobileFilmEdgeEditor(
+                            settings: filmEdgeBinding,
+                            disabled: model.isBusy || model.isRendering
+                        )
+                    } else if adjustmentGroup == .geometry {
                         PhotoGeometryControls(
                             geometry: photoGeometryBinding,
                             imageSize: model.cropEditingImage?.size ?? CGSize(width: 3, height: 2),
@@ -1717,7 +1766,7 @@ struct EditorView: View {
                         )
                     }
                 }
-                if adjustmentGroup != .geometry {
+                if adjustmentGroup != .geometry && adjustmentGroup != .edge {
                 DisclosureGroup(isExpanded: $showingQuickHelp) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("数码柔化：0 为原始锐度；1 为减弱边缘反差，不恢复 JPEG 丢失细节。")

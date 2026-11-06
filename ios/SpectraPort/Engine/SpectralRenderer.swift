@@ -117,6 +117,7 @@ final class SpectralRenderer {
         format: PreviewExporter.Format,
         geometry: PhotoGeometry,
         rawOptions: RAWDecodeOptions?,
+        filmEdge: MobileFilmEdgeSettings,
         limit: ExportLimit,
         progress: @escaping (String) -> Void,
         completion: @escaping (Result<HighResExportResult, Error>) -> Void
@@ -128,6 +129,7 @@ final class SpectralRenderer {
             let outcome = Result {
                 try self.exportSynchronously(data, settings: settings, format: format,
                                              geometry: geometry, rawOptions: rawOptions,
+                                             filmEdge: filmEdge,
                                              limit: limit, report: report)
             }
             DispatchQueue.main.async { completion(outcome) }
@@ -161,6 +163,7 @@ final class SpectralRenderer {
         format: PreviewExporter.Format,
         geometry: PhotoGeometry,
         rawOptions: RAWDecodeOptions?,
+        filmEdge: MobileFilmEdgeSettings,
         limit: ExportLimit,
         report: (String) -> Void
     ) throws -> HighResExportResult {
@@ -232,9 +235,23 @@ final class SpectralRenderer {
             // Identical to the original port when Layer 2 is neutral.
             url = try FullSizeExporter.write(output, format: format, geometry: geometry)
         }
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        // Film edge is applied AFTER spectral print + desktop Layer2 + crop.
+        // This is a distinct mobile compositor, not the Mac native overscan
+        // physics path, and leaves source-local masks in their original UVs.
+        let finishedURL: URL
+        if filmEdge.enabled {
+            report("按原片画幅生成胶片片边和片孔…")
+            finishedURL = try MobileFilmEdgeRenderer.export(
+                sourceURL: url, settings: filmEdge,
+                filmName: FilmCatalog.filmName(settings.filmStock),
+                pixelLimit: limit.pixelLimit
+            )
+        } else {
+            finishedURL = url
+        }
+        let attributes = try FileManager.default.attributesOfItem(atPath: finishedURL.path)
         let bytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+        guard let imageSource = CGImageSourceCreateWithURL(finishedURL as CFURL, nil),
               let pixels = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil)
                   as? [CFString: Any],
               let exportedWidth = (pixels[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
@@ -242,7 +259,7 @@ final class SpectralRenderer {
             throw PortError.message("裁剪导出无法验证实际文件尺寸")
         }
         return HighResExportResult(
-            url: url, fileFormat: format == .jpeg ? "JPEG" : "PNG", fileBytes: bytes,
+            url: finishedURL, fileFormat: format == .jpeg ? "JPEG" : "PNG", fileBytes: bytes,
             width: exportedWidth, height: exportedHeight,
             originalWidth: frame.nativeWidth, originalHeight: frame.nativeHeight,
             elapsedMS: output.elapsed_ms
