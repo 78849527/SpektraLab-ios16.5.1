@@ -49,6 +49,19 @@ struct MobileFilmEdgeEditor: View {
                     .frame(width: 172)
                     .disabled(disabled)
                 }
+                HStack(spacing: 7) {
+                    Text("片门形状")
+                        .font(.system(size: 11))
+                    Spacer()
+                    Picker("片门形状", selection: $settings.gate) {
+                        ForEach(MobileFilmGate.allCases) { gate in
+                            Text(gate.rawValue).tag(gate)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(DarkroomStyle.accent)
+                    .disabled(disabled)
+                }
                 if settings.format.perforated {
                     HStack(spacing: 7) {
                         Text("片孔")
@@ -102,7 +115,7 @@ struct MobileFilmEdgeEditor: View {
                 )
             }
             HStack {
-                Text("当前为独立片边合成；Mac 原版负片显影式 Overscan 尚待移植。")
+                Text("片门支持六种 Mac 形状及打磨片夹；日期和签名可独立启用。原版负片物理 Overscan 仍需单独验证。")
                     .font(.system(size: 10))
                     .foregroundStyle(DarkroomStyle.secondary)
                 Spacer(minLength: 4)

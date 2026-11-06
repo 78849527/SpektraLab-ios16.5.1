@@ -1,5 +1,6 @@
 import AVFoundation
 import Metal
+import ImageIO
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -65,7 +66,7 @@ final class EditorModel: ObservableObject {
     /// Independent film-edge output. Original film, curves, RAW and local
     /// mask coordinates are never modified when these controls change.
     private func refreshFilmEdgePreview() {
-        guard filmEdge.enabled, let processed else {
+        guard filmEdge.needsComposite, let processed else {
             framedProcessed = nil
             return
         }
@@ -87,8 +88,22 @@ final class EditorModel: ObservableObject {
         refreshFilmEdgePreview()
         previewSequence += 1
         if !isDirty {
-            status = filmEdge.enabled ? "片边已应用到预览和高清导出" : "已关闭片边，保留原图"
+            status = filmEdge.needsComposite
+                ? "片边／日期／签名已应用到预览和高清导出"
+                : "已关闭片边、日期和签名，保留原图"
         }
+    }
+
+    func updateDateBack(_ date: MobileDateBackSettings) {
+        var value = filmEdge
+        value.dateBack = date
+        setFilmEdge(value)
+    }
+
+    func updateSignature(_ signature: MobileSignatureSettings) {
+        var value = filmEdge
+        value.signature = signature
+        setFilmEdge(value)
     }
 
     /// RAW WB lives upstream of physical film simulation and is never stored
@@ -359,11 +374,54 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    private static func sourceImprintMetadata(
+        _ data: Data
+    ) -> (date: Date?, dataLine: String) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(
+                source, 0, nil) as? [String: Any] else {
+            return (nil, "")
+        }
+        let exif = properties[kCGImagePropertyExifDictionary as String]
+            as? [String: Any] ?? [:]
+        let tiff = properties[kCGImagePropertyTIFFDictionary as String]
+            as? [String: Any] ?? [:]
+        let time = (exif[kCGImagePropertyExifDateTimeOriginal as String] as? String)
+            ?? (tiff[kCGImagePropertyTIFFDateTime as String] as? String)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        let captured = time.flatMap { formatter.date(from: $0) }
+        var fields: [String] = []
+        if let aperture = exif[kCGImagePropertyExifFNumber as String] as? NSNumber {
+            fields.append(String(format: "f/%.1f", aperture.doubleValue))
+        }
+        if let exposure = exif[kCGImagePropertyExifExposureTime as String] as? NSNumber {
+            let seconds = exposure.doubleValue
+            if seconds > 0 {
+                fields.append(seconds < 1
+                    ? "1/\(Int((1.0/seconds).rounded()))"
+                    : String(format:"%.1fs",seconds))
+            }
+        }
+        if let iso = (exif[kCGImagePropertyExifISOSpeedRatings as String]
+                      as? [NSNumber])?.first {
+            fields.append("ISO\(iso.intValue)")
+        }
+        return (captured, fields.joined(separator: "  "))
+    }
+
     /// Shared new-photo reset also resets the inline UIKit zoom surface.
     private func replaceSourceImage(_ data: Data, format: String) {
         debounceTask?.cancel()
         debounceTask = nil
         sourceData = data
+        let metadata = Self.sourceImprintMetadata(data)
+        var nextEdge = filmEdge
+        nextEdge.dateBack.date = metadata.date ?? Date()
+        nextEdge.dateBack.fromEXIF = metadata.date != nil
+        nextEdge.dateBack.dataText = metadata.dataLine
+        filmEdge = nextEdge
         photoID = UUID()
         photoSelectionVersion += 1
         capturedFormat = format
@@ -553,6 +611,8 @@ struct EditorView: View {
     @State private var showingStartupSettings = false
     @State private var showingCamera = false
     @State private var showingRAWFileImporter = false
+    @State private var showingDateBackEditor = false
+    @State private var showingSignatureEditor = false
     @State private var zoomResetToken = 0
     @State private var showingQuickHelp = false
     @State private var zoomCommand = 0
@@ -600,6 +660,16 @@ struct EditorView: View {
     private var filmEdgeBinding: Binding<MobileFilmEdgeSettings> {
         Binding(get: { model.filmEdge },
                 set: { model.setFilmEdge($0) })
+    }
+
+    private var dateBackBinding: Binding<MobileDateBackSettings> {
+        Binding(get: { model.filmEdge.dateBack },
+                set: { model.updateDateBack($0) })
+    }
+
+    private var signatureBinding: Binding<MobileSignatureSettings> {
+        Binding(get: { model.filmEdge.signature },
+                set: { model.updateSignature($0) })
     }
 
     private var editingMaskOnPhoto: Bool {
@@ -1266,29 +1336,27 @@ struct EditorView: View {
                     Spacer(minLength: 1)
                     workflowTuneButton("片边细调", group: .edge)
                     Button {
-                        showUnportedWorkflowFeature(
-                            "日期后背",
-                            description: "日期后背尚未移植；当前可在片边细调中设置胶片片号。")
+                        showingDateBackEditor = true
                     } label: {
                         Image(systemName: "calendar")
                             .font(.system(size: 15))
-                            .foregroundStyle(DarkroomStyle.secondary)
+                            .foregroundStyle(model.filmEdge.dateBack.enabled
+                                ? DarkroomStyle.accent : DarkroomStyle.secondary)
                             .frame(width: 29, height: 38)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("日期后背，待移植")
+                    .accessibilityLabel("日期后背设置")
                     Button {
-                        showUnportedWorkflowFeature(
-                            "签名",
-                            description: "签名渲染尚未移植；后续将支持签名样式及输出位置。")
+                        showingSignatureEditor = true
                     } label: {
                         Image(systemName: "signature")
                             .font(.system(size: 17))
-                            .foregroundStyle(DarkroomStyle.secondary)
+                            .foregroundStyle(model.filmEdge.signature.enabled
+                                ? DarkroomStyle.accent : DarkroomStyle.secondary)
                             .frame(width: 29, height: 38)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("签名，待移植")
+                    .accessibilityLabel("签名设置")
                 }
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -1299,11 +1367,7 @@ struct EditorView: View {
                                     selected: WorkflowFilmEdgeChoice.current(model.filmEdge) == option
                                 ) {
                                     guard !model.isBusy && !model.isRendering else { return }
-                                    if option == .burnished {
-                                        showUnportedWorkflowFeature(
-                                            "打磨片夹",
-                                            description: "打磨片夹的物理边缘和扫描纹理尚未移植；目前可以使用 135 或归档片边。")
-                                    } else if option == .more {
+                                    if option == .more {
                                         adjustmentGroup = .edge
                                         selectedTab = .adjust
                                     } else {
@@ -1343,7 +1407,10 @@ struct EditorView: View {
             ? (model.filmEdge.view == .filed ? "归档页" :
                model.filmEdge.format.label)
             : "无片边"
-        return edge + " · 日期关闭 · 签名关闭"
+        let dateStatus = model.filmEdge.dateBack.enabled ? "日期开启" : "日期关闭"
+        let signStatus = model.filmEdge.signature.enabled &&
+                         model.filmEdge.signature.hasInk ? "签名开启" : "签名关闭"
+        return edge + " · " + dateStatus + " · " + signStatus
     }
 
     private func showUnportedWorkflowFeature(_ title: String,
@@ -2185,6 +2252,35 @@ struct EditorView: View {
             }
             .sheet(isPresented: $showingStartupSettings) {
                 StartupSettingsView()
+            }
+            .sheet(isPresented: $showingDateBackEditor) {
+                NavigationStack {
+                    MobileDateBackEditor(
+                        settings: dateBackBinding,
+                        panoramic: model.filmEdge.enabled &&
+                            (model.filmEdge.format == .xpan ||
+                             model.filmEdge.format == .f6x12 ||
+                             model.filmEdge.format == .f6x17))
+                    .navigationTitle("日期后背")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { showingDateBackEditor = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showingSignatureEditor) {
+                NavigationStack {
+                    MobileSignatureEditor(settings: signatureBinding)
+                        .navigationTitle("签名")
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("完成") { showingSignatureEditor = false }
+                            }
+                        }
+                }
+                .presentationDetents([.medium, .large])
             }
             .fileImporter(
                 isPresented: $showingRAWFileImporter,
