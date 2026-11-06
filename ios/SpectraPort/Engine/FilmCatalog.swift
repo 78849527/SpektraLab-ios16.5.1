@@ -122,10 +122,28 @@ struct FilmSettings: Equatable, Codable {
     func deltaJSON(striped: Bool = false,
                    filmEdge: MobileFilmEdgeSettings = MobileFilmEdgeSettings(),
                    geometry: PhotoGeometry = .identity,
+                   inputSize: CGSize = .zero,
                    filmName: String = "") throws -> String {
         // Native RFC-031/032 parameters: crop and imprint are part of the
         // negative exposure, before printing. Keep these names in sync with
         // engine/src/core/params.cpp.
+        var crop = PhotoGeometry.bounded(geometry.crop)
+        if filmEdge.enabled && inputSize.width > 0 && inputSize.height > 0 {
+            var imageAspect = inputSize.width / inputSize.height
+            if geometry.quarterTurns % 2 != 0 { imageAspect = 1 / imageAspect }
+            let gate = filmEdge.format.gateMM
+            let targetAspect = max(gate.width, gate.height) / min(gate.width, gate.height)
+            let cropAspect = imageAspect * crop.width / crop.height
+            if cropAspect > targetAspect {
+                let width = crop.width * targetAspect / cropAspect
+                crop.origin.x += (crop.width - width) / 2
+                crop.size.width = width
+            } else if cropAspect < targetAspect {
+                let height = crop.height * cropAspect / targetAspect
+                crop.origin.y += (crop.height - height) / 2
+                crop.size.height = height
+            }
+        }
         var values: [String: Any] = [
             "input_color_space": "ProPhoto RGB",
             "input_cctf_decoding": true,
@@ -140,10 +158,10 @@ struct FilmSettings: Equatable, Codable {
             "print_exposure": printExposure,
             "m_filter_shift": magentaShift,
             "y_filter_shift": yellowShift,
-            "geometry_crop_x": Double(geometry.crop.minX),
-            "geometry_crop_y": Double(geometry.crop.minY),
-            "geometry_crop_w": Double(geometry.crop.width),
-            "geometry_crop_h": Double(geometry.crop.height),
+            "geometry_crop_x": Double(crop.minX),
+            "geometry_crop_y": Double(crop.minY),
+            "geometry_crop_w": Double(crop.width),
+            "geometry_crop_h": Double(crop.height),
             "geometry_quarter_turns": geometry.quarterTurns,
             "geometry_rotation_deg": geometry.straightenDegrees,
             "geometry_flip_h": geometry.flipHorizontal,
