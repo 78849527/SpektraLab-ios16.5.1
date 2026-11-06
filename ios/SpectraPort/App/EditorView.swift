@@ -81,7 +81,10 @@ final class EditorModel: ObservableObject {
     }
 
     func setFilmEdge(_ value: MobileFilmEdgeSettings) {
-        guard !isBusy && !isRendering else { return }
+        // Output-only imprints can change while a spectral preview is in flight.
+        // The completion recomposites the latest filmEdge settings onto the new print.
+        // Keep full-resolution export locked while its output is being captured.
+        guard !isBusy else { return }
         let next = value.normalized()
         guard next != filmEdge else { return }
         filmEdge = next
@@ -1366,7 +1369,7 @@ struct EditorView: View {
                                     option: option,
                                     selected: WorkflowFilmEdgeChoice.current(model.filmEdge) == option
                                 ) {
-                                    guard !model.isBusy && !model.isRendering else { return }
+                                    guard !model.isBusy else { return }
                                     if option == .more {
                                         adjustmentGroup = .edge
                                         selectedTab = .adjust
@@ -1378,7 +1381,7 @@ struct EditorView: View {
                                     }
                                 }
                                 .id(option.id)
-                                .disabled(model.isBusy || model.isRendering)
+                                .disabled(model.isBusy)
                             }
                         }
                         .padding(.top, 5)
