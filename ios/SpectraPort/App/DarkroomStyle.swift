@@ -8,7 +8,7 @@ enum DarkroomStyle {
     static let surface = Color(red: 0.105, green: 0.116, blue: 0.127)
     static let raised = Color(red: 0.155, green: 0.166, blue: 0.176)
     static let line = Color.white.opacity(0.09)
-    static let accent = Color(red: 0.91, green: 0.74, blue: 0.48)
+    static let accent = Color(red: 0.36, green: 0.69, blue: 0.74)
     static let primary = Color(red: 0.95, green: 0.94, blue: 0.92)
     static let secondary = Color(red: 0.65, green: 0.67, blue: 0.68)
 }
