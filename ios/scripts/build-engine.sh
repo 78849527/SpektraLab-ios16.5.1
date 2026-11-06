@@ -58,10 +58,27 @@ for src in "${SOURCES[@]}"; do
     -c "$src" -o "$obj"
   OBJECTS+=("$obj")
 done
-for src in "$LIBRAW_SOURCE"/src/*.cpp; do
+LIBRAW_SOURCES=(
+  "$LIBRAW_SOURCE"/src/libraw_c_api.cpp
+  "$LIBRAW_SOURCE"/src/libraw_datastream.cpp
+  "$LIBRAW_SOURCE"/src/decoders/*.cpp
+  "$LIBRAW_SOURCE"/src/decompressors/*.cpp
+  "$LIBRAW_SOURCE"/src/demosaic/*.cpp
+  "$LIBRAW_SOURCE"/src/integration/*.cpp
+  "$LIBRAW_SOURCE"/src/metadata/*.cpp
+  "$LIBRAW_SOURCE"/src/postprocessing/*.cpp
+  "$LIBRAW_SOURCE"/src/preprocessing/*.cpp
+  "$LIBRAW_SOURCE"/src/tables/*.cpp
+  "$LIBRAW_SOURCE"/src/utils/*.cpp
+  "$LIBRAW_SOURCE"/src/write/*.cpp
+  "$LIBRAW_SOURCE"/src/x3f/*.cpp
+)
+for src in "${LIBRAW_SOURCES[@]}"; do
   [[ "$src" == *_ph.cpp ]] && continue
-  obj="$OUT/objects/libraw-$(basename "${src%.cpp}").o"
-  echo "[LibRaw] $(basename "$src")"
+  relative="${src#"$LIBRAW_SOURCE"/}"
+  object_name="${relative//\//_}"
+  obj="$OUT/objects/libraw-${object_name%.cpp}.o"
+  echo "[LibRaw] $relative"
   xcrun --sdk "$SDK" clang++ -arch "$ARCH" -isysroot "$SYSROOT" "$MIN_FLAG" \
     -std=c++11 -O2 -DNDEBUG -w -DLIBRAW_NODLL -DLIBRAW_NOTHREADS \
     -I"$LIBRAW_SOURCE" -c "$src" -o "$obj"
