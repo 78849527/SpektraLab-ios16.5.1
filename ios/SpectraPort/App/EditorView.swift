@@ -63,21 +63,10 @@ final class EditorModel: ObservableObject {
 
     var currentSettings: FilmSettings { snapshot() }
 
-    /// Independent film-edge output. Original film, curves, RAW and local
-    /// mask coordinates are never modified when these controls change.
+    /// Film edge is now rendered by the original negative/exposure engine.
+    /// Never draw a synthetic frame over a completed print.
     private func refreshFilmEdgePreview() {
-        guard filmEdge.needsComposite, let processed else {
-            framedProcessed = nil
-            return
-        }
-        do {
-            framedProcessed = try MobileFilmEdgeRenderer.preview(
-                processed, settings: filmEdge,
-                filmName: FilmCatalog.filmName(filmID))
-        } catch {
-            framedProcessed = nil
-            status = "片边预览无法生成：" + error.localizedDescription
-        }
+        framedProcessed = nil
     }
 
     func setFilmEdge(_ value: MobileFilmEdgeSettings) {
@@ -85,13 +74,11 @@ final class EditorModel: ObservableObject {
         let next = value.normalized()
         guard next != filmEdge else { return }
         filmEdge = next
-        refreshFilmEdgePreview()
-        previewSequence += 1
-        if !isDirty {
-            status = filmEdge.needsComposite
-                ? "片边／日期／签名已应用到预览和高清导出"
-                : "已关闭片边、日期和签名，保留原图"
-        }
+        framedProcessed = nil
+        markDirty()
+        status = filmEdge.needsComposite
+            ? "片边／日期已进入原版负片渲染"
+            : "原版片边渲染已关闭"
     }
 
     func updateDateBack(_ date: MobileDateBackSettings) {
@@ -162,13 +149,14 @@ final class EditorModel: ObservableObject {
             next.flipHorizontal != photoGeometry.flipHorizontal ||
             next.flipVertical != photoGeometry.flipVertical
         photoGeometry = next
-        if let full = unframedProcessed {
-            if orientationChanged || cropEditingImage == nil {
-                cropEditingImage = PhotoGeometryPreview.render(
-                    full, geometry: next, onlyOrientation: true)
-            }
+        if let original = unframedOriginal, orientationChanged || cropEditingImage == nil {
+            cropEditingImage = PhotoGeometryPreview.render(original, geometry: next,
+                                                            onlyOrientation: true)
+        }
+        if filmEdge.needsComposite {
+            markDirty()
+        } else if let full = unframedProcessed {
             processed = PhotoGeometryPreview.render(full, geometry: next)
-            refreshFilmEdgePreview()
         }
         if let original = unframedOriginal {
             self.original = PhotoGeometryPreview.render(original, geometry: next)
@@ -255,6 +243,8 @@ final class EditorModel: ObservableObject {
         debounceTask = nil
         let captured = snapshot()
         let capturedRAW = rawOptions
+        let capturedEdge = filmEdge
+        let capturedGeometry = photoGeometry
         let capturedPhotoID = photoID
         previewInFlight = true
         isRendering = true
@@ -263,14 +253,16 @@ final class EditorModel: ObservableObject {
 
         renderer.render(
             data: data, photoID: capturedPhotoID, settings: captured,
-            rawOptions: capturedRAW
+            rawOptions: capturedRAW, filmEdge: capturedEdge,
+            geometry: capturedGeometry
         ) { [weak self] outcome in
             guard let self else { return }
             self.previewInFlight = false
             self.isRendering = false
 
             let upToDate = self.photoID == capturedPhotoID &&
-                self.snapshot() == captured && self.rawOptions == capturedRAW
+                self.snapshot() == captured && self.rawOptions == capturedRAW &&
+                self.filmEdge == capturedEdge && self.photoGeometry == capturedGeometry
             switch outcome {
             case let .success(photo):
                 if upToDate {
@@ -290,12 +282,14 @@ final class EditorModel: ObservableObject {
                     self.unframedOriginal = photo.original
                     self.unframedProcessed = photo.processed
                     self.cropEditingImage = PhotoGeometryPreview.render(
-                        photo.processed, geometry: self.photoGeometry,
+                        photo.original, geometry: self.photoGeometry,
                         onlyOrientation: true)
                     self.original = PhotoGeometryPreview.render(
                         photo.original, geometry: self.photoGeometry)
-                    self.processed = PhotoGeometryPreview.render(
-                        photo.processed, geometry: self.photoGeometry)
+                    self.processed = capturedEdge.needsComposite
+                        ? photo.processed
+                        : PhotoGeometryPreview.render(photo.processed,
+                                                      geometry: self.photoGeometry)
                     self.refreshFilmEdgePreview()
                     self.lastElapsedMS = photo.elapsedMS
                     self.lastParametersVerified = photo.parametersVerified
@@ -581,8 +575,7 @@ private enum FilmBrowseFilter: String, CaseIterable {
 }
 
 private enum EditorTab: String, CaseIterable {
-    case film = "胶片"
-    case paper = "相纸"
+    case film = "胶片／相纸"
     case adjust = "调节"
     case grade = "调色"
     case presets = "预设"
@@ -591,7 +584,6 @@ private enum EditorTab: String, CaseIterable {
     var symbol: String {
         switch self {
         case .film: return "film"
-        case .paper: return "square.stack.3d.up"
         case .adjust: return "slider.horizontal.3"
         case .grade: return "circle.lefthalf.filled"
         case .presets: return "bookmark"
@@ -1813,7 +1805,7 @@ struct EditorView: View {
             .disabled(model.isBusy || model.isRendering)
             .accessibilityLabel("打开相机")
 
-            ForEach([EditorTab.film, .paper, .adjust, .grade, .presets, .export],
+            ForEach([EditorTab.film, .adjust, .grade, .presets, .export],
                     id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
@@ -2149,7 +2141,7 @@ struct EditorView: View {
     @ViewBuilder
     private var activePanel: some View {
         switch selectedTab {
-        case .film, .paper: workflowSelectionPanel
+        case .film: workflowSelectionPanel
         case .adjust: quickAdjustmentPanel
         case .grade: desktopGradePanel
         case .presets:
@@ -2176,9 +2168,7 @@ struct EditorView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     previewSection
-                        .frame(height: (selectedTab == .film || selectedTab == .paper)
-                            ? max(150, min(242, geometry.size.height * 0.30))
-                            : max(220, geometry.size.height * 0.51))
+                        .frame(height: max(300, min(420, geometry.size.height * 0.50)))
                         .overlay(alignment: .top) {
                             if let activeSliderReadout {
                                 Text(activeSliderReadout)
@@ -2209,7 +2199,7 @@ struct EditorView: View {
                         ScrollView(.vertical, showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 10) {
                                 activePanel
-                                if selectedTab != .film && selectedTab != .paper {
+                                if selectedTab != .film {
                                     statusSection
                                 }
                             }
@@ -2219,15 +2209,10 @@ struct EditorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(DarkroomStyle.background)
                         .onChange(of: selectedTab) { tab in
-                            if (tab == .film || tab == .paper),
-                               geometry.size.height < 640 {
-                                // Only scroll a short viewport. On standard
-                                // iPhones all three groups remain visible.
-                                let destination = tab == .paper
-                                    ? "workflow-paper" : "workflow-film"
+                            if tab == .film, geometry.size.height < 640 {
                                 DispatchQueue.main.async {
                                     withAnimation(.easeInOut(duration: 0.2)) {
-                                        chooser.scrollTo(destination, anchor: .top)
+                                        chooser.scrollTo("workflow-film", anchor: .top)
                                     }
                                 }
                             }
