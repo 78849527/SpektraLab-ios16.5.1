@@ -92,7 +92,7 @@ struct WorkflowStockCard: View {
 }
 
 enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
-    case none, f135, f120, burnished, archived, xpan, square, sixSeven, more
+    case none, f135, f120, archived, xpan, square, sixSeven, more
 
     var id: String { rawValue }
     var name: String {
@@ -100,7 +100,6 @@ enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
         case .none: "无片边"
         case .f135: "135 胶片条"
         case .f120: "120 中画幅"
-        case .burnished: "打磨片夹"
         case .archived: "归档页"
         case .xpan: "XPan"
         case .square: "6×6"
@@ -113,7 +112,6 @@ enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
         case .none: "square"
         case .f135: "film"
         case .f120: "rectangle"
-        case .burnished: "viewfinder"
         case .archived: "square.stack.3d.up"
         case .xpan: "rectangle.expand.vertical"
         case .square: "square.dashed"
@@ -125,7 +123,6 @@ enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
 
     static func current(_ value: MobileFilmEdgeSettings) -> WorkflowFilmEdgeChoice {
         guard value.enabled else { return .none }
-        if value.gate == .burnished { return .burnished }
         if value.view == .filed { return .archived }
         switch value.format {
         case .f135: return .f135
@@ -146,10 +143,6 @@ enum WorkflowFilmEdgeChoice: String, CaseIterable, Identifiable {
         case .none: break
         case .f135: next.format = .f135
         case .f120: next.format = .f645
-        case .burnished:
-            next.format = .f135
-            next.view = .filed
-            next.gate = .burnished
         case .archived:
             next.format = .f135
             next.view = .filed
