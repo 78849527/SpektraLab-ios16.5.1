@@ -141,7 +141,7 @@ jobs:
           assert "if editingMaskOnPhoto {" in editor
           assert "LocalMaskCanvas(" in editor
           assert "showingQuickHelp" in editor
-          assert 'CURRENT_PROJECT_VERSION: "37"' in project
+          assert 'CURRENT_PROJECT_VERSION: "38"' in project
           assert "url = try FullSizeExporter.write(graded, format: format, geometry: geometry)" in Path("ios/SpectraPort/Engine/SpectralRenderer.swift").read_text()
           print("COMPACT_UI_BUILD33_PASS")
           PY
@@ -172,7 +172,7 @@ jobs:
           assert 'Label("启动设置", systemImage: "gearshape")' in editor
           assert "LocalMaskCanvas(" in editor
           assert "MaskLuminanceSampling.sample(" in Path("ios/SpectraPort/App/InlineMaskOverlay.swift").read_text()
-          assert 'CURRENT_PROJECT_VERSION: "37"' in project
+          assert 'CURRENT_PROJECT_VERSION: "38"' in project
           print("NINE_ACTION_COMPACT_NAV_BUILD33_PASS")
           PY
       - name: Verify hidden navigation chrome and fine slider touch contract
@@ -201,7 +201,7 @@ jobs:
           assert "onTrackingChange(false)" in style
           assert "TextField(\"数值\", text: $precisionText)" in style
           assert 'VStack(spacing: 0)' in local
-          assert 'CURRENT_PROJECT_VERSION: "37"' in project
+          assert 'CURRENT_PROJECT_VERSION: "38"' in project
           assert "LocalMaskCanvas(" in editor
           print("FINE_SLIDER_HIDDEN_NAV_BUILD33_PASS")
           PY
@@ -258,7 +258,7 @@ jobs:
           assert "private func cornerGesture(" in canvas
           assert "private func moveGesture(" in canvas
           assert "LocalMaskCanvas(" in editor
-          assert 'CURRENT_PROJECT_VERSION: "37"' in Path("ios/project.yml").read_text()
+          assert 'CURRENT_PROJECT_VERSION: "38"' in Path("ios/project.yml").read_text()
           print("PHOTO_GEOMETRY_EXPORT_CONTRACT_PASS")
           PY
       - name: Verify bidirectional crop-aware local mask coordinates
@@ -295,7 +295,7 @@ jobs:
           assert "MaskLuminanceSampling.sample(cg, at: uv)" in overlay
           assert "func toSource(_ point: CGPoint, clamp: Bool = true)" in coords
           assert "func radialSourceBoundary(" in coords
-          assert 'CURRENT_PROJECT_VERSION: "37"' in project
+          assert 'CURRENT_PROJECT_VERSION: "38"' in project
           print("CROP_MASK_UI_BUILD33_PASS")
           PY
       - name: Compile and validate native RAW decoder options on macOS
@@ -332,6 +332,11 @@ jobs:
           assert "importRAWFile(_ url: URL)" in ed
           assert "RawImageDeveloper.readFile(at: url)" in ed
           assert "static func readFile(at url: URL) throws -> Data" in developer
+          assert "RawImageDeveloper.probe(data, hint: hint, filename: url.lastPathComponent)" in ed
+          assert "decoder: payload.1.decoder" in ed
+          assert "enum RAWDecoderBackend" in developer
+          assert "spk_raw_probe_file(" in developer
+          assert "spk_raw_decode_file(" in developer
           assert "startAccessingSecurityScopedResource()" in developer
           assert "NSFileCoordinator(filePresenter: nil)" in developer
           assert "showingRAWFileImporter" in ed
@@ -344,7 +349,7 @@ jobs:
           assert "geometry: geometry, rawOptions: rawAtExport" in ed
           assert "self.rawOptions == capturedRAW" in ed
           assert "LocalMaskCanvas(" in ed
-          assert 'CURRENT_PROJECT_VERSION: "37"' in proj
+          assert 'CURRENT_PROJECT_VERSION: "38"' in proj
           print("RAW_ENGINE_WB_CONTRACT_BUILD33_PASS")
           PY
       - name: Test physical Film Edge format layout and output budget
@@ -373,7 +378,7 @@ jobs:
           assert "pixelLimit: Int" in model
           assert "layout.canvas.width" in Path("ios/tests/film-edge-layout/main.swift").read_text()
           assert "MobileFilmEdgeEditor(" in editor
-          assert 'case edge = "片边"' in editor
+          assert 'case edge = "片边"' not in editor
           assert "editingMaskOnPhoto ? model.processed :" in editor
           assert "model.framedProcessed ?? model.processed" in editor
           assert "framedProcessed = try MobileFilmEdgeRenderer.preview(" in editor
@@ -386,7 +391,7 @@ jobs:
           assert "format.scale = 1" in renderer
           assert "MobileFilmEdgeView.allCases" in view and "片号" in view
           assert "LocalMaskCanvas(" in editor
-          assert 'CURRENT_PROJECT_VERSION: "37"' in project
+          assert 'CURRENT_PROJECT_VERSION: "38"' in project
           print("FILM_EDGE_PIPELINE_BUILD34_PASS")
           PY
       - name: Verify three-stack film paper and edge-date selection layout
@@ -408,7 +413,7 @@ jobs:
           assert "WorkflowStockCard(" in editor and "WorkflowFilmEdgeCard(" in editor
           assert 'workflowTuneButton("胶片细调", group: .camera)' in editor
           assert 'workflowTuneButton("相纸细调", group: .print)' in editor
-          assert 'workflowTuneButton("片边细调", group: .edge)' in editor
+          assert 'filmEdgeEditorButton("片边细调")' in editor
           assert 'Image(systemName: "calendar")' in editor
           assert 'Image(systemName: "signature")' in editor
           assert "showUnportedWorkflowFeature(" in editor
@@ -418,11 +423,11 @@ jobs:
           assert ".stroke(selected ? DarkroomStyle.accent" in card
           assert 'mobileFilmEdge' not in card
           assert 'case .edge' not in editor[editor.index('private enum EditorTab'):editor.index('private enum GradeSubsection')]
-          assert 'case edge = "片边"' in editor
+          assert 'case edge = "片边"' not in editor
           assert "MobileFilmEdgeEditor(" in editor
           assert "MobileFilmEdgeView.allCases" in old_edge
           assert "LocalMaskCanvas(" in editor
-          assert 'CURRENT_PROJECT_VERSION: "37"' in project
+          assert 'CURRENT_PROJECT_VERSION: "38"' in project
           print("TRIPLE_FLOW_BUILD35_PASS")
           PY
       - name: Compile date-back and drawn signature model fixtures
@@ -432,7 +437,7 @@ jobs:
             ios/tests/imprint-settings/main.swift \
             -framework CoreGraphics \
             -o /tmp/spectraport-imprint-settings
-          /tmp/spectraport-imprint-settings | grep -q IMPRINT_MODEL_BUILD37_PASS
+          /tmp/spectraport-imprint-settings | grep -q IMPRINT_MODEL_BUILD38_PASS
       - name: Verify compact three-rail and complete output imprint linkage
         run: |
           python3 - <<'PY'
@@ -477,8 +482,8 @@ jobs:
           assert 'next.gate = .burnished' in cards
           assert 'MobileFilmGate.allCases' in Path(
               "ios/SpectraPort/App/MobileFilmEdgeEditor.swift").read_text()
-          assert 'CURRENT_PROJECT_VERSION: "37"' in Path("ios/project.yml").read_text()
-          print("COMPACT_IMPRINT_BUILD37_PASS")
+          assert 'CURRENT_PROJECT_VERSION: "38"' in Path("ios/project.yml").read_text()
+          print("COMPACT_IMPRINT_BUILD38_PASS")
           PY
       - name: Compile unmodified Mac Layer2 Metal shader against iPhoneOS 16
         run: |
@@ -522,14 +527,14 @@ jobs:
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           test -f "$APP/SpectraPort"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx "com.twogou.SpectraPortCompactImprintBeta36"
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "37"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx "38"
       - name: Verify isolated iPhone beta identity and memory gate
         run: |
           APP=ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" | grep -qx 'com.twogou.SpectraPortCompactImprintBeta36'
-          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '37'
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" | grep -qx '38'
           /usr/libexec/PlistBuddy -c "Print MinimumOSVersion" "$APP/Info.plist" | grep -qx '16.0'
-          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱紧凑片边37'
+          /usr/libexec/PlistBuddy -c "Print CFBundleDisplayName" "$APP/Info.plist" | grep -qx '光谱紧凑片边38'
           test -s "$APP/Assets.car"
           test -s "$APP/engine/spectraport-desktop-layer2.metallib"
           grep -Fq 'if needsDesktopLayer2(settings) && limit == .high' ios/SpectraPort/Engine/SpectralRenderer.swift
@@ -544,13 +549,13 @@ jobs:
           mkdir -p ios/build/beta-payload/Payload
           cp -R ios/build/DerivedData/Build/Products/Release-iphoneos/SpectraPort.app ios/build/beta-payload/Payload/
           cd ios/build/beta-payload
-          zip -q -r ../SpectraPort-iOS16-CompactImprint-v0.18.0-beta.18-Build37-unsigned.ipa Payload
-          test -s ../SpectraPort-iOS16-CompactImprint-v0.18.0-beta.18-Build37-unsigned.ipa
+          zip -q -r ../SpectraPort-iOS16-CompactImprint-v0.18.0-beta.18-Build38-unsigned.ipa Payload
+          test -s ../SpectraPort-iOS16-CompactImprint-v0.18.0-beta.18-Build38-unsigned.ipa
       - name: Upload beta IPA as Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpectraPort-CompactImprint-v0.18.0-beta.18-Build37-unsigned
-          path: ios/build/SpectraPort-iOS16-CompactImprint-v0.18.0-beta.18-Build37-unsigned.ipa
+          name: SpectraPort-CompactImprint-v0.18.0-beta.18-Build38-unsigned
+          path: ios/build/SpectraPort-iOS16-CompactImprint-v0.18.0-beta.18-Build38-unsigned.ipa
           if-no-files-found: error
       # Post-package parity checks: preserve a distributable unsigned IPA even
       # if host-specific Metal numeric fixtures report an Intel GPU mismatch.
