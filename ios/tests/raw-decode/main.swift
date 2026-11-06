@@ -1,3 +1,20 @@
+// These test-only C ABI stubs keep the Core Image/options fixture independent
+// from the device-only LibRaw engine archive. The app target uses Bridge.h.
+func spk_raw_probe_file(_ path: UnsafePointer<CChar>?,
+                        _ width: UnsafeMutablePointer<UInt32>?,
+                        _ height: UnsafeMutablePointer<UInt32>?,
+                        _ error: UnsafeMutablePointer<CChar>?,
+                        _ errorCapacity: Int) -> Int32 { 0 }
+func spk_raw_decode_file(_ path: UnsafePointer<CChar>?, _ preview: Int32,
+                         _ rgb: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>?,
+                         _ width: UnsafeMutablePointer<UInt32>?,
+                         _ height: UnsafeMutablePointer<UInt32>?,
+                         _ nativeWidth: UnsafeMutablePointer<UInt32>?,
+                         _ nativeHeight: UnsafeMutablePointer<UInt32>?,
+                         _ error: UnsafeMutablePointer<CChar>?,
+                         _ errorCapacity: Int) -> Int32 { 0 }
+func spk_raw_free_buffer(_ buffer: UnsafeMutableRawPointer?) {}
+
 import CoreImage
 import Foundation
 import UniformTypeIdentifiers
