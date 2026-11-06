@@ -88,4 +88,27 @@ verify(close(portraitHandle.x, fullHandle.x) &&
        close(portraitHandle.y, fullHandle.y),
        "live preview image replacement does not shift mask handle")
 
+// Crop and local-mask controls must use the same viewport mapping. Test a
+// non-centred crop against both top-left and bottom-right inverse touch UVs.
+let fractionalCrop = CGRect(x: 0.125, y: 0.2, width: 0.65, height: 0.55)
+let cropOnPortrait = MaskPhotoGeometry.cropRect(fractionalCrop, in: portrait)
+verify(close(cropOnPortrait.minX, portrait.minX + portrait.width * 0.125) &&
+       close(cropOnPortrait.minY, portrait.minY + portrait.height * 0.2),
+       "crop respects portrait letterbox and top-left UV origin")
+let cropTopLeft = MaskPhotoGeometry.normalized(
+    CGPoint(x: cropOnPortrait.minX, y: cropOnPortrait.minY), in: portrait)
+let cropBottomRight = MaskPhotoGeometry.normalized(
+    CGPoint(x: cropOnPortrait.maxX, y: cropOnPortrait.maxY), in: portrait)
+verify(close(cropTopLeft.x, fractionalCrop.minX) &&
+       close(cropTopLeft.y, fractionalCrop.minY) &&
+       close(cropBottomRight.x, fractionalCrop.maxX) &&
+       close(cropBottomRight.y, fractionalCrop.maxY),
+       "crop corners and mask touches roundtrip in one viewport space")
+let cropOnLandscape = MaskPhotoGeometry.cropRect(fractionalCrop, in: landscape)
+verify(close(cropOnLandscape.minX, 390 * 0.125) &&
+       close(cropOnLandscape.minY, 123.75 + 292.5 * 0.2),
+       "crop respects landscape vertical letterbox")
+verify(MaskPhotoGeometry.cropRect(fractionalCrop, in: .zero) == .zero,
+       "unlaid-out viewport never projects a crop")
+
 print("MASK_PHOTO_GEOMETRY_PASS: portrait, landscape, handles, rotation, clamps")
