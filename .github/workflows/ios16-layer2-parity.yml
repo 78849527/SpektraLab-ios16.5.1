@@ -400,9 +400,9 @@ jobs:
           order = editor[editor.index('private var workflowSelectionPanel: some View'):]
           assert order.index('filmSection') < order.index('paperSection') < order.index('filmEdgeChoiceSection')
           assert "WorkflowStockCard(" in editor and "WorkflowFilmEdgeCard(" in editor
-          assert "workflowTuneButton(\\"胶片细调\\", group: .camera)" in editor
-          assert "workflowTuneButton(\\"相纸细调\\", group: .print)" in editor
-          assert "workflowTuneButton(\\"片边细调\\", group: .edge)" in editor
+          assert 'workflowTuneButton("胶片细调", group: .camera)' in editor
+          assert 'workflowTuneButton("相纸细调", group: .print)' in editor
+          assert 'workflowTuneButton("片边细调", group: .edge)' in editor
           assert 'Image(systemName: "calendar")' in editor
           assert 'Image(systemName: "signature")' in editor
           assert "showUnportedWorkflowFeature(" in editor
