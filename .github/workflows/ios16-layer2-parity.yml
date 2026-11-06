@@ -343,6 +343,7 @@ jobs:
           assert "allowedContentTypes: [.item]" in ed
           assert ".alert(\"RAW 导入失败\"" in ed
           assert "rawImportError = message" in ed
+          assert 'self.rawImportError = "RAW 显影失败：" + message' in ed
           assert "model.changeRAWOptions(p)" in ed
           assert "RAW 色温" in ed and "RAW 色调" in ed
           assert "photoID = UUID()" in ed
