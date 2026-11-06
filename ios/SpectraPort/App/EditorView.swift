@@ -339,6 +339,8 @@ final class EditorModel: ObservableObject {
         markDirty()
     }
 
+    func cameraPreviewSettings() -> FilmSettings { snapshot() }
+
     private func snapshot() -> FilmSettings {
         FilmSettings(
             filmStock: filmID, printStock: paperID,
@@ -469,9 +471,36 @@ final class EditorModel: ObservableObject {
             status = "正在处理上一张照片，请稍后重试"
             return
         }
-        replaceSourceImage(capture.processedData, format: capture.modeLabel)
-        status = "暗房相机照片已导入，正在进行光谱渲染…"
-        applySettings()
+        guard capture.isRAW else {
+            replaceSourceImage(capture.processedData, format: capture.modeLabel)
+            status = "暗房相机照片已导入，正在进行光谱渲染…"
+            applySettings()
+            return
+        }
+        isBusy = true
+        status = "正在读取 Apple RAW / DNG 和 As Shot 白平衡…"
+        Task {
+            do {
+                let payload = try await Task.detached(priority: .userInitiated) {
+                    let probe = try RawImageDeveloper.probe(
+                        capture.processedData, hint: "com.adobe.raw-image", filename: "capture.dng")
+                    return probe
+                }.value
+                replaceSourceImage(capture.processedData, format: capture.modeLabel)
+                rawAsShot = payload
+                rawOptions = RAWDecodeOptions(
+                    identifierHint: "com.adobe.raw-image", useAsShot: true,
+                    temperature: payload.temperature, tint: payload.tint,
+                    lensCorrection: payload.lensCorrectionSupported, decoder: payload.decoder)
+                isBusy = false
+                applySettings()
+            } catch {
+                isBusy = false
+                let message = "Apple RAW 显影失败：" + error.localizedDescription
+                status = message
+                rawImportError = message
+            }
+        }
     }
 
     func exportOriginal(
@@ -2378,6 +2407,7 @@ struct EditorView: View {
                 }
             }) {
                 StableSpectraCameraView(
+                    liveSettings: model.cameraPreviewSettings(),
                     onCapture: { capture in
                         pendingCapture = capture
                         showingCamera = false
